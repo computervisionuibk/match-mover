@@ -5,64 +5,106 @@
  * This file provides an implementation of "The optimal triangulation method"
  * (see Hartley and Zisserman, Multiple View Geometry, Algorithm 12.1).
  *
+ * Construct World Points:
+ * Given image points correspondences and the fundamental matrix (or the
+ * cameras, respectively), the corresponding world points are generated. An
+ * optimization of the correspondences is performed in advance.
+ *
+ * Optimize Correspondences:
  * Given a measured point correspondence x <-> x' and a fundamental matrix F,
  * compute the corrected correspondences ~x <-> ~x' that minimize the
  * geometric error subject to the epipolar constraint ~x'^TF~x = 0.
  *
- * Notes:
- * accessor Mij starts with 0. 
- * Member methods such as `t()` do not alter the object.
  *
  */
 #include <stdio.h>
 #include <stdlib.h>
-#include <cv.h>
 
-using namespace std;
-using namespace cv;
+#include "Triangulation.h"
 
-/*
- * TODO: 
- * - extend to multiple points
- * - add reconstrucition
- * - simple modul for fundamental cam1 cam2 = funda and vice versa
- *
- */
+Matx14d constructWorldPoint 
+  ( const Matx13d& point1
+  , const Matx13d& point2 
+  , const Matx34d& camera1
+  , const Matx34d& camera2);
 
-void reconstruct3DPoint ( const Matx13d& point1
-                        , const Matx34d& camera1
-                        , const Matx13d& point2
-                        , const Matx34d& camera2);
-
-Matx14d constructWorldPoint ( const Matx13d& point1
-                            , const Matx34d& camera1
-                            , const Matx13d& point2 
-                            , const Matx34d& camera2);
-
-void optimalTriangulation ( const Matx13d& point1
-                          , const Matx13d& point2
-                          , const Matx33d& fundamentalMatrix
-                          , Matx13d& newPoint1
-                          , Matx13d& newPoint2);
+void optimizeCorrespondences
+  ( const Matx13d& point1
+  , const Matx13d& point2
+  , const Matx33d& fundamentalMatrix
+  , Matx13d& newPoint1
+  , Matx13d& newPoint2);
 
 Matx33d mkTransformationMatrix(const Matx13d& v);
+
 Matx13d mkEpipole(const Matx33d& fundamentalMatrix);
+
 Matx33d mkRotationMatrix(const Matx13d& v);
+
 typedef Matx<double, 1, 7> Matx17d;
-Matx17d mkPolynomial( double f, double g
-                    , double a, double b
-                    , double c, double d);
-double squaredDistance( double t
-                      , double f, double g
-                      , double a, double b
-                      , double c, double d);
-double squaredDistanceDt( double f, double g
-                        , double a, double c);
+Matx17d mkPolynomial
+  ( double f, double g
+  , double a, double b
+  , double c, double d);
+
+double squaredDistance
+  ( double t
+  , double f, double g
+  , double a, double b
+  , double c, double d);
+
+double squaredDistanceDt
+  ( double f, double g
+  , double a, double c);
+
 Matx13d closestPoint(Matx13d line);
 
+
+// -- IMPL
+
+Vector<Matx14d> triangulateFromCameras
+  ( const Vector<Matx13d>& points1
+  , const Vector<Matx13d>& points2
+  , const Matx34d& camera1
+  , const Matx34d& camera2)
+{
+  // TODO: Matx33d f = mkFundamentalMatrix(p,q);
+  //return triangulate(us,vs,f,p,q);
+}
+
+Vector<Matx14d> triangulateFromFundamentalMatrix
+  ( const Vector<Matx13d>& us
+  , const Vector<Matx13d>& vs
+  , const Matx33d& f)
+{
+  // TODO: Matx34d f = mkCam1(f);
+  // TODO: Matx34d f = mkCam2(f);
+  //return triangulate(us,vs,f,p,q);
+}
+
+Vector<Matx14d> triangulate
+  ( const Vector<Matx13d>& us
+  , const Vector<Matx13d>& vs
+  , const Matx33d& f
+  , const Matx34d& p
+  , const Matx34d& q)
+{
+  Vector<Matx14d> result(us.size());
+  for(int i=0; i<us.size(); ++i){
+    Matx13d u,v, nu, nv;
+    u = us[i];
+    v = vs[i];
+    optimizeCorrespondences(u,v,f,nu,nv);
+    result[i]=constructWorldPoint(u,v,p,q);
+  }
+  return result;
+}
+
+
+
 Matx14d constructWorldPoint ( const Matx13d& u
-                            , const Matx34d& p
                             , const Matx13d& v
+                            , const Matx34d& p
                             , const Matx34d& q)
 {
   float xu,yu,xv,yv;
@@ -86,8 +128,9 @@ Matx14d constructWorldPoint ( const Matx13d& u
   return x.t(); 
 }
 
-void optimalTriangulation ( const Matx13d& u, const Matx13d& v, const Matx33d& fm
-                          , Matx13d& nu, Matx13d& nv)
+void optimizeCorrespondences( const Matx13d& u, const Matx13d& v
+                            , const Matx33d& fm
+                            , Matx13d& nu, Matx13d& nv)
 {
   // init
   Matx33d f = fm; //test should be copied?
