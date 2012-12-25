@@ -22,7 +22,12 @@
 
 #include "Triangulation.h"
 
-Matx14d constructWorldPoint 
+void mkCamerasFromFundamentalMat
+  ( const Matx33d& fundamentalMat
+  , Matx34d& camera1
+  , Matx34d& camera2);
+
+Matx14d mkWorldPoint 
   ( const Matx13d& point1
   , const Matx13d& point2 
   , const Matx34d& camera1
@@ -31,15 +36,19 @@ Matx14d constructWorldPoint
 void optimizeCorrespondences
   ( const Matx13d& point1
   , const Matx13d& point2
-  , const Matx33d& fundamentalMatrix
+  , const Matx33d& fundamentalMat
   , Matx13d& newPoint1
   , Matx13d& newPoint2);
 
-Matx33d mkTransformationMatrix(const Matx13d& v);
+Matx33d mkTransformationMat(const Matx13d& v);
 
-Matx13d mkEpipole(const Matx33d& fundamentalMatrix);
+Matx13d mkEpipole(const Matx33d& fundamentalMat);
 
-Matx33d mkRotationMatrix(const Matx13d& v);
+Matx13d normalize2(const Matx13d& v);
+
+Matx33d mkSkewSymmetricMat(const Matx13d& v);
+
+Matx33d mkRotationMat(const Matx13d& v);
 
 typedef Matx<double, 1, 7> Matx17d;
 Matx17d mkPolynomial
@@ -62,24 +71,14 @@ Matx13d closestPoint(Matx13d line);
 
 // -- IMPL
 
-Vector<Matx14d> triangulateFromCameras
-  ( const Vector<Matx13d>& points1
-  , const Vector<Matx13d>& points2
-  , const Matx34d& camera1
-  , const Matx34d& camera2)
-{
-  // TODO: Matx33d f = mkFundamentalMatrix(p,q);
-  //return triangulate(us,vs,f,p,q);
-}
-
-Vector<Matx14d> triangulateFromFundamentalMatrix
+Vector<Matx14d> triangulateFromFundamentalMat
   ( const Vector<Matx13d>& us
   , const Vector<Matx13d>& vs
   , const Matx33d& f)
 {
-  // TODO: Matx34d f = mkCam1(f);
-  // TODO: Matx34d f = mkCam2(f);
-  //return triangulate(us,vs,f,p,q);
+  Matx34d p,q;
+  mkCamerasFromFundamentalMat(f,p,q);
+  return triangulate(us,vs,f,p,q);
 }
 
 Vector<Matx14d> triangulate
@@ -95,17 +94,35 @@ Vector<Matx14d> triangulate
     u = us[i];
     v = vs[i];
     optimizeCorrespondences(u,v,f,nu,nv);
-    result[i]=constructWorldPoint(u,v,p,q);
+    result[i]=mkWorldPoint(u,v,p,q);
   }
   return result;
 }
 
 
+// cf. 9.14
+void mkCamerasFromFundamentalMat( const Matx33d& f
+                                , Matx34d& p
+                                , Matx34d& q)
+{
+  Matx34d tp(1,0,0,0
+            ,0,1,0,0
+            ,0,0,1,0);
+  Matx13d e = mkEpipole(f);
 
-Matx14d constructWorldPoint ( const Matx13d& u
-                            , const Matx13d& v
-                            , const Matx34d& p
-                            , const Matx34d& q)
+  Matx33d t = mkSkewSymmetricMat(e)*f;
+  Matx34d tq(t(0,0),t(0,1),t(0,2),e(0,0)
+            ,t(1,0),t(1,1),t(1,2),e(0,1)
+            ,t(2,0),t(2,1),t(2,2),e(0,2));
+
+  p = tp;
+  q = tq;
+}
+
+Matx14d mkWorldPoint( const Matx13d& u
+                    , const Matx13d& v
+                    , const Matx34d& p
+                    , const Matx34d& q)
 {
   float xu,yu,xv,yv;
   xu = u(0,0); yu = u(0,1);
@@ -135,17 +152,17 @@ void optimizeCorrespondences( const Matx13d& u, const Matx13d& v
   // init
   Matx33d f = fm; //test should be copied?
   // (i)
-  Matx33d tu = mkTransformationMatrix(u);
-  Matx33d tv = mkTransformationMatrix(v);
+  Matx33d tu = mkTransformationMat(u);
+  Matx33d tv = mkTransformationMat(v);
   // (ii)
   f = tv.inv().t() *f* tu.inv();
   //(iii)
   // right epipole F*eu=0; left epipole ev*F=0 -> F'*ev=0
-  Matx13d eu = mkEpipole(f);
-  Matx13d ev = mkEpipole(f.t());
+  Matx13d eu = normalize2(mkEpipole(f));
+  Matx13d ev = normalize2(mkEpipole(f.t()));
   // (vi)
-  Matx33d ru = mkRotationMatrix(eu);
-  Matx33d rv = mkRotationMatrix(ev);
+  Matx33d ru = mkRotationMat(eu);
+  Matx33d rv = mkRotationMat(ev);
   // (v)
   f = rv *f* ru.t();
   // (vi)
@@ -186,7 +203,7 @@ void optimizeCorrespondences( const Matx13d& u, const Matx13d& v
 
 }
 
-Matx33d mkTransformationMatrix(const Matx13d& v)
+Matx33d mkTransformationMat(const Matx13d& v)
 {
   double x,y;
   x = v(0,0); y = v(0,1);
@@ -196,7 +213,7 @@ Matx33d mkTransformationMatrix(const Matx13d& v)
   return t;
 }
 
-Matx33d mkRotationMatrix(const Matx13d& v)
+Matx33d mkRotationMat(const Matx13d& v)
 {
   double x,y;
   x = v(0,0); y = v(0,1);
@@ -212,10 +229,25 @@ Matx13d mkEpipole(const Matx33d& f)
   Matx13d vZero3(0,0,0);
   Matx13d e; 
   solve(f, vZero3.t(), e.t(), DECOMP_SVD);
-  scale = sqrt(pow(e(0,0),2) + pow(e(0,1),2));
-  e = e*scale;
   return e;
 }
+
+Matx33d mkSkewSymmetricMat(const Matx13d& v)
+{
+  double x,y,z;
+  x = v(0,0); y = v(0,1); z = (0,2);
+  Matx33d m ( 0,-z, y
+            , z, 0,-x
+            ,-y, 1, 0
+            );
+  return m;
+}
+
+Matx13d normalize2(const Matx13d& v)
+{
+  double scale = sqrt(pow(v(0,0),2) + pow(v(0,1),2));
+  return v*scale;
+} 
 
 Matx17d mkPolynomial( double f, double g
                     , double a, double b
@@ -288,4 +320,5 @@ int main ( int argc, char **argv )
   
   return 0;
 }
+
 
