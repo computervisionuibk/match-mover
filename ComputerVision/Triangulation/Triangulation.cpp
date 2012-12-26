@@ -15,7 +15,7 @@
  * compute the corrected correspondences ~x <-> ~x' that minimize the
  * geometric error subject to the epipolar constraint ~x'^TF~x = 0.
  *
- *
+ * Note: Assignment of Matx differs from Mat. A copy is made.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -125,20 +125,20 @@ Matx14d mkWorldPoint( const Matx13d& u
                     , const Matx34d& q)
 {
   float xu,yu,xv,yv;
-  xu = u(0,0); yu = u(0,1);
-  xv = v(0,0); yv = v(0,1);
+  xu = u(0); yu = u(1);
+  xv = v(0); yv = v(1);
 
   Matx14d p1,p2,p3, q1,q2,q3;
   p1 = p.row(0); q1 = q.row(0);
   p2 = p.row(1); q2 = q.row(1);
   p3 = p.row(2); q3 = q.row(2);
-  // TODO: test correct?
+
   Matx44d a;
   a.row(0) = xu*p3-p1;
   a.row(1) = yu*p3-p2;
   a.row(2) = xv*q3-q1;
   a.row(3) = yv*q3-q2;
-  // perform dlt
+
   Matx41d x;
   SVD::solveZ(a,x);
   
@@ -151,32 +151,48 @@ void optimizeCorrespondences( const Matx13d& u, const Matx13d& v
 {
   // init
   Matx33d f = fm; //test should be copied?
+  cout << "f" << f << endl;
   // (i)
   Matx33d tu = mkTransformationMat(u);
   Matx33d tv = mkTransformationMat(v);
+  cout << "tu" << tu << endl;
+  cout << "tv" << tv << endl;
   // (ii)
   f = tv.inv().t() *f* tu.inv();
+  cout << "f" << f << endl;
   //(iii)
-  // right epipole F*eu=0; left epipole ev*F=0 -> F'*ev=0
+  // right epipole F*eu=0; left epipole ev'*F=0 -> F'*ev=0
   Matx13d eu = normalize2(mkEpipole(f));
   Matx13d ev = normalize2(mkEpipole(f.t()));
+  cout << "eu" << eu << endl;
+  cout << "ev" << ev << endl;
   // (vi)
   Matx33d ru = mkRotationMat(eu);
   Matx33d rv = mkRotationMat(ev);
+  cout << "ru" << ru << endl;
+  cout << "rv" << rv << endl;
   // (v)
   f = rv *f* ru.t();
+  cout << "f" << f << endl;
   // (vi)
   double fu,fv,a,b,c,d;
-  fu = eu(0,2);
-  fv = ev(0,2);
+  fu = eu(2);
+  fv = ev(2);
   a  = f(1,1);
   b  = f(1,2);
   c  = f(2,1);
   d  = f(2,2);
   // (vii)
-  Matx16d roots;
+  cout << "f" << f << endl;
+  Mat roots(1,6,CV_64FC2);
   Matx17d polynomial = mkPolynomial(fu,fv,a,b,c,d);
-  solvePoly(polynomial,roots); // TODO: check if complex part is casted away
+  cout << "poly" << polynomial << endl;
+  solvePoly(polynomial,roots,100);
+  cout << "roots" << roots << endl;
+  Matx16d realRoots (roots.at<Vec2d>(0,0)[0],roots.at<Vec2d>(0,1)[0],roots.at<Vec2d>(0,2)[0]
+                    ,roots.at<Vec2d>(0,3)[0],roots.at<Vec2d>(0,4)[0],roots.at<Vec2d>(0,5)[0]);
+  cout << "realroots" << realRoots << endl;
+   
   // (viii) minimize cost function (squared root)
   // asymptotic s for t=infinity
   double t_min, s_val;
@@ -185,7 +201,7 @@ void optimizeCorrespondences( const Matx13d& u, const Matx13d& v
   // s(t) for real roots
   double t,s;
   for (int i = 0; i < 6; i++) {
-    t = roots(0,i);
+    t = realRoots(0,i);
     s = squaredDistance(t,fu,fv,a,b,c,d);
     if (s < s_val) {
       s_val = s;
@@ -216,26 +232,28 @@ Matx33d mkTransformationMat(const Matx13d& v)
 Matx33d mkRotationMat(const Matx13d& v)
 {
   double x,y;
-  x = v(0,0); y = v(0,1);
+  x = v(0); y = v(1);
   Matx33d r ( x,y,0
             ,-y,x,0 
-            ,0 ,0,1);
+            , 0,0,1);
   return r;
 }
 
 Matx13d mkEpipole(const Matx33d& f)
 {
-  double scale; 
-  Matx13d vZero3(0,0,0);
-  Matx13d e; 
-  solve(f, vZero3.t(), e.t(), DECOMP_SVD);
-  return e;
+  //Matx13d vZero3(0,0,0);
+  //Matx13d e; 
+  //solve(f, vZero3.t(), e.t(), DECOMP_SVD);
+  //cout << "e" << e << endl;
+  SVD svd = SVD(f);
+  Matx31d t = svd.vt.col(2);
+  return t.t();
 }
 
 Matx33d mkSkewSymmetricMat(const Matx13d& v)
 {
   double x,y,z;
-  x = v(0,0); y = v(0,1); z = (0,2);
+  x = v(0); y = v(1); z = (2);
   Matx33d m ( 0,-z, y
             , z, 0,-x
             ,-y, 1, 0
@@ -245,7 +263,7 @@ Matx33d mkSkewSymmetricMat(const Matx13d& v)
 
 Matx13d normalize2(const Matx13d& v)
 {
-  double scale = sqrt(pow(v(0,0),2) + pow(v(0,1),2));
+  double scale = sqrt(pow(v(0),2) + pow(v(1),2));
   return v*scale;
 } 
 
@@ -253,31 +271,44 @@ Matx17d mkPolynomial( double f, double g
                     , double a, double b
                     , double c, double d)
 {
-  double a2,b2,c2,d2,f2,g2;
-  a2 = pow(a,2); b2 = pow(b,2);
-  c2 = pow(c,2); d2 = pow(d,2);
-  f2 = pow(f,2); g2 = pow(g,2);
-  double a3,b3,c3,d3,f3,g3;
-  a3 = pow(a,3); b3 = pow(b,3);
-  c3 = pow(c,3); d3 = pow(d,3);
-  f3 = pow(f,3); g3 = pow(g,3);
-  double a4,b4,c4,d4,f4,g4;
-  a4 = pow(a,4); b4 = pow(b,4);
-  c4 = pow(c,4); d4 = pow(d,4);
-  f4 = pow(f,4); g4 = pow(g,4);
+  //double a2,b2,c2,d2,f2,g2;
+  //a2 = pow(a,2); b2 = pow(b,2);
+  //c2 = pow(c,2); d2 = pow(d,2);
+  //f2 = pow(f,2); g2 = pow(g,2);
+  //double a3,b3,c3,d3,f3,g3;
+  //a3 = pow(a,3); b3 = pow(b,3);
+  //c3 = pow(c,3); d3 = pow(d,3);
+  //f3 = pow(f,3); g3 = pow(g,3);
+  //double a4,b4,c4,d4,f4,g4;
+  //a4 = pow(a,4); b4 = pow(b,4);
+  //c4 = pow(c,4); d4 = pow(d,4);
+  //f4 = pow(f,4); g4 = pow(g,4);
 
 
-  // hurray for WolframAlpha
+  //// hurray for WolframAlpha
   double k0,k1,k2,k3,k4,k5,k6;
-  k0 = a*b*d2 + b2*c*d;
-  k1 = -a2*d2 + b*4 + b2*c2 + 2*b2*d2*g2 + d4*g4;
-  k2 = -a2*c*d + 4*a*b3 + a*b*c2 - 2*a*b*d2*f2 + 4*a*b*g2 + 2*b2+c+d+f2 + 4*b2*c*d*g2 + 4*c*d3*g4;
-  k3 = 6*a2*b2 -  2*a2*d2*f2 + 2*a2*d2*g2 + 8*a*b*c*d*g2 + 2*b2*c2*f2 + 2*b2*c2*g2 + 6*c2*d2*g4;
-  k4 = 4*a3*b - 2*a2*c*d*f2 + 4*a2*c*d*g2 + 2*a*b*c2*f2 + 4*a*b*c2*f2 - a*b*d2*f4 + b2*c*d*f4 + 4*c3*d*g4;
-  k5 = a4 + 2*a2*c2*g2 - a2*d2*f4 + b2*c2*f4 + c4*g4;
-  k6 = a*b*c2*f4 - a2*c*d*f4;
+  //k0 = a*b*d2 + b2*c*d;
+  //k1 = -a2*d2 + b*4 + b2*c2 + 2*b2*d2*g2 + d4*g4;
+  //k2 = -a2*c*d + 4*a*b3 + a*b*c2 - 2*a*b*d2*f2 + 4*a*b*g2 + 2*b2+c+d+f2 + 4*b2*c*d*g2 + 4*c*d3*g4;
+  //k3 = 6*a2*b2 -  2*a2*d2*f2 + 2*a2*d2*g2 + 8*a*b*c*d*g2 + 2*b2*c2*f2 + 2*b2*c2*g2 + 6*c2*d2*g4;
+  //k4 = 4*a3*b - 2*a2*c*d*f2 + 4*a2*c*d*g2 + 2*a*b*c2*f2 + 4*a*b*c2*f2 - a*b*d2*f4 + b2*c*d*f4 + 4*c3*d*g4;
+  //k5 = a4 + 2*a2*c2*g2 - a2*d2*f4 + b2*c2*f4 + c4*g4;
+  //k6 = a*b*c2*f4 - a2*c*d*f4;
 
-  return Matx17d(k0,k1,k2,k3,k4,k5,k6);
+  double f1 = f;
+  double f2 = g;
+
+  k6 = +b*c*c*f1*f1*f1*f1*a-a*a*d*f1*f1*f1*f1*c;
+  k5 = +f2*f2*f2*f2*c*c*c*c+2*a*a*f2*f2*c*c-a*a*d*d*f1*f1*f1*f1+b*b*c*c*f1*f1*f1*f1+a*a*a*a;
+  k4 = +4*a*a*a*b+2*b*c*c*f1*f1*a+4*f2*f2*f2*f2*c*c*c*d+4*a*b*f2*f2*c*c+4*a*a*f2*f2*c*d-2*a*a*d*f1*f1*c-a*d*d*f1*f1*f1*f1*b+b*b*c*f1*f1*f1*f1*d;
+  k3 = +6*a*a*b*b+6*f2*f2*f2*f2*c*c*d*d+2*b*b*f2*f2*c*c+2*a*a*f2*f2*d*d-2*a*a*d*d*f1*f1+2*b*b*c*c*f1*f1+8*a*b*f2*f2*c*d;
+  k2 = +4*a*b*b*b+4*b*b*f2*f2*c*d+4*f2*f2*f2*f2*c*d*d*d-a*a*d*c+b*c*c*a+4*a*b*f2*f2*d*d-2*a*d*d*f1*f1*b+2*b*b*c*f1*f1*d;
+  k1 = +f2*f2*f2*f2*d*d*d*d+b*b*b*b+2*b*b*f2*f2*d*d-a*a*d*d+b*b*c*c;
+  k0 = -a*d*d*b+b*b*c*d;
+
+
+  Matx17d m(k0,k1,k2,k3,k4,k5,k6);
+  return m;
 }
 
 double squaredDistance( double t
@@ -298,27 +329,31 @@ double squaredDistanceDt( double f, double g
 Matx13d closestPoint(Matx13d l)
 {
   double x,y,z;
-  x = l(0,0);
-  y = l(0,1);
-  z = l(0,2);
+  x = l(0);
+  y = l(1);
+  z = l(2);
   return (-x*z,-y*z,x*x-y*y);
 }
 
 int main ( int argc, char **argv )
 {
   // try a bit
-  Matx13d v (1,2,3);  
-  cout << v(2);
-  Matx33d tu (1,0,5,
-              0,1,5, 
-              0,0,1);
-  Matx33d tv(tu);
-  tv(1,1) = 2;
-  cout << tu(0,2) << endl;
+  const Mat tu = (Mat_<double>(1,3) << 1,1,1);
+  Mat tv = tu.col(2);
+  tv.at<double>(0,0) = 2;
+  Mat tx = 2*tv;
   cout << tu << endl;
-  cout << pow(2,3) << endl;
-  
+  cout << tv << endl;
+  cout << tx << endl;
+
+  Matx13d mu(1,2,1);
+  Matx<double,1,1> mv = mu.col(2);
+  mv(0) = 2;
+  cout << mu << endl;
+  cout << mv << endl;
+  cout << mu(1) << endl;
+
+
   return 0;
 }
-
 
