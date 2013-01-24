@@ -7,28 +7,27 @@
 
 #include "Renderer.h"
 #include <stdio.h>
-#include <iostream>
-#include <fstream>
+#include <exception>
 #include <cv.h>
 #include <GL/glut.h>
 
 using namespace cv;
 using namespace std;
 
-//TODO remove
-int i = 0;
+
+int i = 0;		//TODO remove
 
 int main(int argc, char* argv[]) {
 
-	if (argc != 2) {
-		std::cout << "USAGE: " << argv[0] << "FILENAME" << std::endl;
+	if (argc != 3) {
+		std::cout << "USAGE: argv[0]=InputVideo-FILENAME,  arg[1]=ObjectPositionData-Filename"<< std::endl;
 		return EXIT_SUCCESS;
 	}
 
-	string filename = std::string(argv[1]);
-	cout << filename << endl;
+	string video_filename = std::string(argv[1]);
+	string data_filename = std::string(argv[2]);
 	vector<Mat> frames;
-	VideoCapture cap(filename);
+	VideoCapture cap(video_filename);
 	for (double i = 0; i < cap.get(CV_CAP_PROP_FRAME_COUNT); i++) {
 
 		Mat frame;
@@ -36,22 +35,21 @@ int main(int argc, char* argv[]) {
 		frames.push_back(frame.clone());
 	}
 
-	Renderer renderer(filename + "_render2.avi", cap, "/home/ick/test.yml", true);
+	Renderer renderer(video_filename + "_render2.avi", cap, data_filename, true);
 	renderer.render(frames, frames);
 }
 
 Renderer::Renderer(std::string filename2, cv::Size size2, double framerate2, std::string initFilename, bool preview2) {
-	init(filename2, size2, framerate2, preview2);
 	readObjectAndLightData(initFilename);
+	init(filename2, size2, framerate2, preview2);
 }
 
 Renderer::Renderer(std::string filename, cv::VideoCapture inputVideo, std::string initFilename, bool preview) {
 	Size s = Size((int) inputVideo.get(CV_CAP_PROP_FRAME_WIDTH), (int) inputVideo.get(CV_CAP_PROP_FRAME_HEIGHT));
 	double framerate = inputVideo.get(CV_CAP_PROP_FPS);
 
-	init(filename, s, framerate, preview);
 	readObjectAndLightData(initFilename);
-	cout << light.x << " " << light.y << " " << light.z << endl;
+	init(filename, s, framerate, preview);
 }
 
 Renderer::~Renderer() {
@@ -64,9 +62,6 @@ void Renderer::init(std::string filename2, cv::Size size2, double framerate2, bo
 	framerate = framerate2;
 	format = CV_FOURCC('D', 'I', 'V', 'X');
 
-	//TODO init object
-	//TODO init lightposition
-
 	if (preview) {
 		int size = 0;
 		glutInit(&size, NULL);
@@ -76,27 +71,49 @@ void Renderer::init(std::string filename2, cv::Size size2, double framerate2, bo
 		glutCreateWindow("MatchMover");
 		glClearColor(0.0, 0.0, 0.0, 1.0);
 	}
+
+	//init light
+	glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
+	GLfloat ambient[]={0,0,0,1};
+	glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
+	GLfloat diffuse[]={1,1,1,1};
+	glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
+	GLfloat specular[]={1,1,1,1};
+	glLightfv(GL_LIGHT0, GL_SPECULAR, specular);
+	//TODO glLightModel with 0.2,0.2,0.2,1
+
+	glEnable(GL_LIGHTING);	//Enable light
+	glEnable(GL_LIGHT0);
+
+	//init material
+	GLfloat specularMaterial[]={1,1,1,1};
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, specularMaterial);
+	GLfloat emissionMaterial[]={0,0,0,1};
+	glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, emissionMaterial);
+
+	glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE); //let vertex color override material properties
+	glEnable(GL_COLOR_MATERIAL);
 }
 
 void Renderer::readObjectAndLightData(std::string filename) {
-	FileStorage fs(filename, FileStorage::READ);
-	FileNode node = fs["object"];
-	double object_x = (double) node["x"];
-	double object_y = (double) node["y"];
-	double object_z = (double) node["z"];
-	scale = (double) node["scale"];
+	try {
+		FileStorage fs(filename, FileStorage::READ);
+		FileNode node = fs["object"];
+		double object_x = (double) node["x"];
+		double object_y = (double) node["y"];
+		double object_z = (double) node["z"];
+		scale = (double) node["scale"];
 
-	object = Point3d(object_x, object_y, object_z);
-	cout << object_x << " " << object_y << " " << object_z << endl;
+		objectPosition = Point3d(object_x, object_y, object_z);
 
-	node = fs["light"];
-	double light_x = (double) node["x"];
-	double light_y = (double) node["y"];
-	double light_z = (double) node["z"];
-
-	light = Point3d(light_x, light_y, light_z);
-	cout << light_x << " " << light_y << " " << light_z << endl;
-	cout << light.x << " " << light.y << " " << light.z << endl;
+		node = fs["light"];
+		lightPosition[0] = (double) node["x"];
+		lightPosition[1] = (double) node["y"];
+		lightPosition[2] = (double) node["z"];
+		//light = Point3d(light_x, light_y, light_z);
+	} catch (Exception& e) {
+		cout << "Object and light position data could not found/read" << endl;
+	}
 }
 
 bool Renderer::openOutputFile() {
@@ -129,10 +146,8 @@ void Renderer::renderFrame(cv::Mat& background) {
 	cv::Mat renderedImage(videoSize, CV_8UC3);
 	cv::flip(background, background, 0); //flip image - OpenGL and OpenCV image-data's are different
 
-	//set camera
-
 	//render object
-	renderObject(background);
+	renderObject(background/*, cameraposition*/);
 
 	//getOutput
 	glReadPixels(0, 0, videoSize.width, videoSize.height, GL_BGR, GL_UNSIGNED_BYTE, (uchar*) renderedImage.data); //grab OpenGL frame buffer and store it in OpenCV image
@@ -146,7 +161,8 @@ void Renderer::renderObject(cv::Mat& background) {
 	glMatrixMode(GL_PROJECTION);
 	glPushMatrix();
 	glLoadIdentity();
-	glOrtho(0, videoSize.width, 0, videoSize.height, -100, 500); //set ortho view
+	glOrtho(0, videoSize.width, 0, videoSize.height, -500, 500); //set ortho view
+	//gluPerspective(45.0,videoSize.width/videoSize.height,-100,1000.0);
 	glMatrixMode(GL_MODELVIEW);
 	glPushMatrix();
 	glLoadIdentity();
@@ -165,27 +181,35 @@ void Renderer::renderObject(cv::Mat& background) {
 	//	glTexCoord2f(0.0f, 1.0f);
 	//	glVertex2f(0.0f, VIEWPORT_HEIGHT);
 	//glEnd();
+	//glDisable(GL_TEXTURE_2D);
 
+	//Draw background - (slow solution)
 	glDrawPixels(videoSize.width, videoSize.height, GL_BGR, GL_UNSIGNED_BYTE, background.data);
 
-	glDisable(GL_TEXTURE_2D);
+
 	glPushMatrix();
+	//TODO set new cameraposition - modelview
+	glRotatef(i++, 1.0f, 1.0f, 0.2f); //TODO
+
+	//TODO update light
+	glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
+
+
 	//glRotatef(i, 1.0f, 1.0f, 0.0f);
 	//draw plane for shadow
-	glBegin(GL_QUADS);
-	glColor4f(0.75, 0.75, 0.75, 0.2);
-	glVertex3f(0.0f, 0.0f, -50.0f);
-	glVertex3f(0.0f, 0.0f, 50.0f);
-	glVertex3f(videoSize.width, 0.0f, 50.0f);
-	glVertex3f(videoSize.width, 0.0f, -50.0f);
-	glEnd();
+	//glBegin(GL_QUADS);
+	//glColor4f(0.75, 0.75, 0.75, 0.2);
+	//glVertex3f(0.0f, 0.0f, -50.0f);
+	//glVertex3f(0.0f, 0.0f, 50.0f);
+	//glVertex3f(videoSize.width, 0.0f, 50.0f);
+	//glVertex3f(videoSize.width, 0.0f, -50.0f);
+	//glEnd();
 
 	//draw 3D-Object
 	glPushMatrix();
 	glColor4f(0.75, 0.75, 0.75, 1.0);
-	glTranslated(object.x, object.y, object.z); //Position in the room
+	glTranslated(objectPosition.x, objectPosition.y, objectPosition.z); //Position in the room
 	//glMultMatrixf
-	glRotatef(i++, 0.1f, 1.0f, 0.2f);			//TODO
 
 	glScalef(scale, scale, scale); //TODO
 	glutSolidTeapot(1);

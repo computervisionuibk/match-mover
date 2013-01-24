@@ -25,9 +25,9 @@ private:
 	int format;
 	bool preview;
 
-	cv::Point3d object;
+	cv::Point3d objectPosition;
 	double scale;
-	cv::Point3d light;
+	float lightPosition[3];
 
 	void init(std::string filename, cv::Size size, double framerate, bool preview);
 	void readObjectAndLightData(std::string filename);
