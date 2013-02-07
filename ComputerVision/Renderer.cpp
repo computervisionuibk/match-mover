@@ -10,17 +10,19 @@
 #include <exception>
 #include <cv.h>
 #include <GL/glut.h>
+//#include "SDL/SDL.h"
+//#include "SDL/SDL_opengl.h"
 
 using namespace cv;
 using namespace std;
 
-
-int i = 0;		//TODO remove
+int i = 0; //TODO remove
+void handleInputEvents(unsigned char key, int x, int y);
 
 int main(int argc, char* argv[]) {
 
 	if (argc != 3) {
-		std::cout << "USAGE: argv[0]=InputVideo-FILENAME,  arg[1]=ObjectPositionData-Filename"<< std::endl;
+		std::cout << "USAGE: argv[0]=InputVideo-FILENAME,  arg[1]=ObjectPositionData-Filename" << std::endl;
 		return EXIT_SUCCESS;
 	}
 
@@ -35,32 +37,34 @@ int main(int argc, char* argv[]) {
 		frames.push_back(frame.clone());
 	}
 
+	//TODO select object-position
+
 	Renderer renderer(video_filename + "_render2.avi", cap, data_filename, true);
-	renderer.render(frames, frames);
+	renderer.render(frames, frames, frames);
 }
 
 Renderer::Renderer(std::string filename2, cv::Size size2, double framerate2, std::string initFilename, bool preview2) {
-	readObjectAndLightData(initFilename);
-	init(filename2, size2, framerate2, preview2);
+	init(filename2, initFilename, size2, framerate2, preview2);
 }
 
 Renderer::Renderer(std::string filename, cv::VideoCapture inputVideo, std::string initFilename, bool preview) {
 	Size s = Size((int) inputVideo.get(CV_CAP_PROP_FRAME_WIDTH), (int) inputVideo.get(CV_CAP_PROP_FRAME_HEIGHT));
 	double framerate = inputVideo.get(CV_CAP_PROP_FPS);
 
-	readObjectAndLightData(initFilename);
-	init(filename, s, framerate, preview);
+	init(filename, initFilename, s, framerate, preview);
 }
 
 Renderer::~Renderer() {
 }
 
-void Renderer::init(std::string filename2, cv::Size size2, double framerate2, bool preview2) {
+void Renderer::init(std::string filename2, string initFilename, cv::Size size2, double framerate2, bool preview2) {
+	readObjectAndLightData(initFilename);
 	preview = preview2;
 	videoSize = size2;
 	filename = filename2;
 	framerate = framerate2;
 	format = CV_FOURCC('D', 'I', 'V', 'X');
+	//object = QuadObject(scale);
 
 	if (preview) {
 		int size = 0;
@@ -72,23 +76,25 @@ void Renderer::init(std::string filename2, cv::Size size2, double framerate2, bo
 		glClearColor(0.0, 0.0, 0.0, 1.0);
 	}
 
-	//init light
+	//setup light
 	glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
-	GLfloat ambient[]={0,0,0,1};
+	GLfloat ambient[] = { 0, 0, 0, 1 };
 	glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
-	GLfloat diffuse[]={1,1,1,1};
+	GLfloat diffuse[] = { 1, 1, 1, 1 };
 	glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
-	GLfloat specular[]={1,1,1,1};
+	GLfloat specular[] = { 1, 1, 1, 1 };
 	glLightfv(GL_LIGHT0, GL_SPECULAR, specular);
 	//TODO glLightModel with 0.2,0.2,0.2,1
+	GLfloat lmodel_ambient[] = { 0.2, 0.2, 0.2, 1.0 };
+	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, lmodel_ambient);
 
-	glEnable(GL_LIGHTING);	//Enable light
+	glEnable(GL_LIGHTING); //Enable light
 	glEnable(GL_LIGHT0);
 
 	//init material
-	GLfloat specularMaterial[]={1,1,1,1};
+	GLfloat specularMaterial[] = { 1, 1, 1, 1 };
 	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, specularMaterial);
-	GLfloat emissionMaterial[]={0,0,0,1};
+	GLfloat emissionMaterial[] = { 0, 0, 0, 1 };
 	glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, emissionMaterial);
 
 	glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE); //let vertex color override material properties
@@ -116,6 +122,14 @@ void Renderer::readObjectAndLightData(std::string filename) {
 	}
 }
 
+/*static*/Point3d Renderer::selectObjectPosition(Mat frame1, Mat frame2, Mat frame3) {
+	//TODO
+	//imshow("video", frames[0]);
+	//+ Mouse-listener -> getPoints -> calc with triangulation 3d-point;
+
+	return Point3d(0, 0, 0);
+}
+
 bool Renderer::openOutputFile() {
 	videoWriter.open(filename, format, framerate, videoSize, true);
 	if (videoWriter.isOpened())
@@ -124,16 +138,67 @@ bool Renderer::openOutputFile() {
 		return false;
 }
 
-void Renderer::render(std::vector<cv::Mat>& video, std::vector<cv::Mat> cameramovement) {
+void handleInputEvents() {
+	//SDL_Event event;
+	//while (SDL_PollEvent(&event)) {
+	//	if (event.type == SDL_QUIT) {
+	//		SDL_Quit();
+	//		exit(0);
+	//	}
+	//}
+}
+
+void Renderer::render(std::vector<cv::Mat>& video, std::vector<cv::Mat> rotation, std::vector<cv::Mat> translation) {
 	//open VideoWriter for output-video
 	openOutputFile();
 
-	for (vector<Mat>::iterator it = video.begin(); it != video.end(); ++it) {
-		renderFrame(*it);
-		writeNextFrame(*it);
+	double camerapostion[16];
+	for (int j = 0; j < 4; j++) {
+		for (int k = 0; k < 4; k++)
+			if (j == k)
+				camerapostion[j * 4 + k] = 1;
+			else
+				camerapostion[j * 4 + k] = 0;
+	}
+
+	//setup Frustum
+	//gluPerspective(45.0,videoSize.width/videoSize.height,0,100.0);
+	double zNear=1.5;
+	double zFar=10;
+	//glFrustum( 0, videoSize.width, 0, videoSize.height, zNear, zFar );
+	glOrtho(0, videoSize.width, 0, videoSize.height, -500, 500);
+
+	for (size_t i = 0; i < video.size(); i++) {
+		//handle SDL events
+		handleInputEvents();
+
+		//calculate rotation-translation-matrix
+		//setCameraPose(camerapostion, rotation[i], translation[i]);
+
+		//TODO remove test...............................................................................
+		double pi = 3.14159;
+		double deg2Rad = pi/180.0;
+		double angleX = 20+(i++);
+		double sx = sin(angleX * deg2Rad);
+		double cx = cos(angleX * deg2Rad);
+		cv::Mat test_t = (cv::Mat_<double>(4, 4) << 1.0, 0.0, 0.0, 200, 0.0, 1.0, 0.0, 50, 0.0, 0.0, 1.0, 1, 0.0, 0.0, 0.0, 1.0);
+		cv::Mat test_r = (cv::Mat_<double>(4, 4) << 1, 0, 0, 0, 0, cx, -sx, 0, 0, sx, cx, 0, 0, 0, 0, 1);
+		//test_r.at<double>(0, 0) = 0.5;
+		//test_r.at<double>(1, 0) = 0.2;
+		setCameraPose(camerapostion, test_t, test_r);
+
+		//for (int j = 0; j < 4; j++) {
+		//	for (int k = 0; k < 4; k++)
+		//		cout <</*camerapostion[j*4+k]*/test_t.at<double>(j, k) << " ";
+		//	cout << endl;
+		//}
+		//............................................................................................
+
+		renderAndWriteFrame(video[i], camerapostion);
+		writeNextFrame(video[i]);
 
 		char c;
-		if ((c = waitKey(100)) >= 0) {
+		if ((c = waitKey(150)) >= 0) {
 			cout << "key pressed: " << c << endl;
 			if (c == 'a')
 				i += 20;
@@ -142,12 +207,12 @@ void Renderer::render(std::vector<cv::Mat>& video, std::vector<cv::Mat> cameramo
 	}
 }
 
-void Renderer::renderFrame(cv::Mat& background) {
+void Renderer::renderAndWriteFrame(cv::Mat& background, double cameraposition[16]) {
 	cv::Mat renderedImage(videoSize, CV_8UC3);
-	cv::flip(background, background, 0); //flip image - OpenGL and OpenCV image-data's are different
+	cv::flip(background, background, 0); //flip image - OpenGL and OpenCV different imagedata-structure
 
 	//render object
-	renderObject(background/*, cameraposition*/);
+	renderScene(background, cameraposition);
 
 	//getOutput
 	glReadPixels(0, 0, videoSize.width, videoSize.height, GL_BGR, GL_UNSIGNED_BYTE, (uchar*) renderedImage.data); //grab OpenGL frame buffer and store it in OpenCV image
@@ -155,70 +220,80 @@ void Renderer::renderFrame(cv::Mat& background) {
 	background = renderedImage;
 }
 
-void Renderer::renderObject(cv::Mat& background) {
+void Renderer::renderScene(cv::Mat& background, double cameraposition[16]) {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	glMatrixMode(GL_PROJECTION);
 	glPushMatrix();
-	glLoadIdentity();
-	glOrtho(0, videoSize.width, 0, videoSize.height, -500, 500); //set ortho view
-	//gluPerspective(45.0,videoSize.width/videoSize.height,-100,1000.0);
-	glMatrixMode(GL_MODELVIEW);
-	glPushMatrix();
-	glLoadIdentity();
+		glLoadIdentity();
+		glOrtho(0, videoSize.width, 0, videoSize.height, -500, 500); //set ortho view
+		//gluPerspective(45.0,videoSize.width/videoSize.height,0,100.0);
+		glMatrixMode(GL_MODELVIEW);
 
-	//Draw a textured quad - for the background
-	//glColor4f(1, 1, 1, 1);
+		//Draw background - (slow solution)
+		glDrawPixels(videoSize.width, videoSize.height, GL_BGR, GL_UNSIGNED_BYTE, background.data);
 
-	//glEnable(GL_TEXTURE_2D);
-	//glBegin(GL_QUADS);
-	//	glTexCoord2f(0.0f, 0.0f);
-	//	glVertex2f(0.0f, 0.0f);
-	//	glTexCoord2f(1.0f, 0.0f);
-	//	glVertex2f(VIEWPORT_WIDTH, 0.0f);
-	//	glTexCoord2f(1.0f, 1.0f);
-	//	glVertex2f(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
-	//	glTexCoord2f(0.0f, 1.0f);
-	//	glVertex2f(0.0f, VIEWPORT_HEIGHT);
-	//glEnd();
-	//glDisable(GL_TEXTURE_2D);
-
-	//Draw background - (slow solution)
-	glDrawPixels(videoSize.width, videoSize.height, GL_BGR, GL_UNSIGNED_BYTE, background.data);
-
-
-	glPushMatrix();
-	//TODO set new cameraposition - modelview
-	glRotatef(i++, 1.0f, 1.0f, 0.2f); //TODO
-
-	//TODO update light
-	glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
-
-
-	//glRotatef(i, 1.0f, 1.0f, 0.0f);
-	//draw plane for shadow
-	//glBegin(GL_QUADS);
-	//glColor4f(0.75, 0.75, 0.75, 0.2);
-	//glVertex3f(0.0f, 0.0f, -50.0f);
-	//glVertex3f(0.0f, 0.0f, 50.0f);
-	//glVertex3f(videoSize.width, 0.0f, 50.0f);
-	//glVertex3f(videoSize.width, 0.0f, -50.0f);
-	//glEnd();
-
-	//draw 3D-Object
-	glPushMatrix();
-	glColor4f(0.75, 0.75, 0.75, 1.0);
-	glTranslated(objectPosition.x, objectPosition.y, objectPosition.z); //Position in the room
-	//glMultMatrixf
-
-	glScalef(scale, scale, scale); //TODO
-	glutSolidTeapot(1);
+		//restore previous projective matrix
+		glMatrixMode(GL_PROJECTION);
 	glPopMatrix();
+	glMatrixMode(GL_MODELVIEW);
+
+
+	glPushMatrix();
+		//set camerapostion
+		//glRotatef(i++, 1.0f, 1.0f, 0.2f); //TODO
+		//glLoadMatrixd(cameraposition);
+
+		//TODO update light
+		glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
+
+		//draw 3D-Object
+		glPushMatrix();
+			glTranslated(objectPosition.x, objectPosition.y, objectPosition.z); //Position in the room
+			//glMultMatrixf
+
+			glScalef(scale, scale, scale); //TODO
+			glColor4f(0.75, 0.75, 0.75, 1.0);
+			glutSolidTeapot(1);
+
+			//object.renderObject();
+
+		glPopMatrix();
 	glPopMatrix();
 
 	glFlush();
-
 	glutSwapBuffers();
+}
+
+double* Renderer::setCameraPose(double modelViewMatrixRecoveredCamera[16], cv::Mat& rotation, cv::Mat& translation) {
+	//construct modelview matrix from rotation and translation (reversed y and z axis from OpenCV to OpenGL)
+	// Left  Up  Fwd  Translation
+	//   R   R   R |  t
+	//  -R  -R  -R | -t
+	//  -R  -R  -R | -t
+	//   0   0   0 |  1
+	//first column
+	modelViewMatrixRecoveredCamera[0] = rotation.at<double>(0, 0);
+	modelViewMatrixRecoveredCamera[1] = -rotation.at<double>(1, 0);
+	modelViewMatrixRecoveredCamera[2] = -rotation.at<double>(2, 0);
+	modelViewMatrixRecoveredCamera[3] = 0.0;
+	//second column
+	modelViewMatrixRecoveredCamera[4] = rotation.at<double>(0, 1);
+	modelViewMatrixRecoveredCamera[5] = -rotation.at<double>(1, 1);
+	modelViewMatrixRecoveredCamera[6] = -rotation.at<double>(2, 1);
+	modelViewMatrixRecoveredCamera[7] = 0.0;
+	//third column
+	modelViewMatrixRecoveredCamera[8] = rotation.at<double>(0, 2);
+	modelViewMatrixRecoveredCamera[9] = -rotation.at<double>(1, 2);
+	modelViewMatrixRecoveredCamera[10] = -rotation.at<double>(2, 2);
+	modelViewMatrixRecoveredCamera[11] = 0.0;
+	//fourth column
+	modelViewMatrixRecoveredCamera[12] = translation.at<double>(0, 0);
+	modelViewMatrixRecoveredCamera[13] = -translation.at<double>(1, 0);
+	modelViewMatrixRecoveredCamera[14] = -translation.at<double>(2, 0);
+	modelViewMatrixRecoveredCamera[15] = 1.0;
+
+	return modelViewMatrixRecoveredCamera;
 }
 
 void Renderer::writeNextFrame(cv::Mat& frame) {
