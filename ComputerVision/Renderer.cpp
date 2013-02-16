@@ -255,10 +255,10 @@ void Renderer::setupPerspective(){
 	if (!isPerspectiveSet){
 		//setup Frustum
 		//gluPerspective(45.0,videoSize.width/videoSize.height,0,100.0);
-		double zNear=1.5;
-		double zFar=10;
-		glFrustum( 0, videoSize.width, 0, videoSize.height, zNear, zFar );
-		//glOrtho(0, videoSize.width, 0, videoSize.height, -500, 500);
+		//double zNear=1.5;
+		//double zFar=10;
+		//glFrustum( 0, videoSize.width, 0, videoSize.height, zNear, zFar );
+		glOrtho(0, videoSize.width, 0, videoSize.height, -500, 500);
 		isPerspectiveSet=true;
 	}
 }
