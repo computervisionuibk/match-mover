@@ -10,24 +10,30 @@
 #include <exception>
 #include <cv.h>
 #include <GL/glut.h>
-//#include "SDL/SDL.h"
-//#include "SDL/SDL_opengl.h"
+#include "SDL/SDL.h"
+#include "SDL/SDL_opengl.h"
 
 using namespace cv;
 using namespace std;
 
 int i = 0; //TODO remove
+int frame = 0; //TODO remove
+int speed = 100;
+std::vector<cv::Mat> previewVideo;
 void handleInputEvents(unsigned char key, int x, int y);
+void keyPressed (unsigned char key, int x, int y);
+//void onDisplay();
 
 int main(int argc, char* argv[]) {
 
-	if (argc != 3) {
-		std::cout << "USAGE: argv[0]=InputVideo-FILENAME,  arg[1]=ObjectPositionData-Filename" << std::endl;
+	if (argc < 2) {
+		std::cout << "USAGE: argv[0]=InputVideo-FILENAME [, arg[1]=ObjectPositionData-Filename]" << std::endl;
 		return EXIT_SUCCESS;
 	}
 
 	string video_filename = std::string(argv[1]);
 	string data_filename = std::string(argv[2]);
+
 	vector<Mat> frames;
 	VideoCapture cap(video_filename);
 	for (double i = 0; i < cap.get(CV_CAP_PROP_FRAME_COUNT); i++) {
@@ -39,42 +45,61 @@ int main(int argc, char* argv[]) {
 
 	//TODO select object-position
 
-	Renderer renderer(video_filename + "_render2.avi", cap, data_filename, true);
+	Renderer renderer(video_filename + "_render2.avi", cap, data_filename);
+
+	renderer.setupObjectPostion(frames);
+
 	renderer.render(frames, frames, frames);
 }
 
-Renderer::Renderer(std::string filename2, cv::Size size2, double framerate2, std::string initFilename, bool preview2) {
-	init(filename2, initFilename, size2, framerate2, preview2);
+Renderer::Renderer(std::string filename2, cv::Size size2, double framerate2, std::string initFilename) {
+	init(filename2, initFilename, size2, framerate2);
 }
 
-Renderer::Renderer(std::string filename, cv::VideoCapture inputVideo, std::string initFilename, bool preview) {
+Renderer::Renderer(std::string filename, cv::VideoCapture inputVideo, std::string initFilename) {
 	Size s = Size((int) inputVideo.get(CV_CAP_PROP_FRAME_WIDTH), (int) inputVideo.get(CV_CAP_PROP_FRAME_HEIGHT));
 	double framerate = inputVideo.get(CV_CAP_PROP_FPS);
 
-	init(filename, initFilename, s, framerate, preview);
+	init(filename, initFilename, s, framerate);
 }
 
 Renderer::~Renderer() {
 }
 
-void Renderer::init(std::string filename2, string initFilename, cv::Size size2, double framerate2, bool preview2) {
+void Renderer::init(std::string filename2, string initFilename, cv::Size size2, double framerate2) {
 	readObjectAndLightData(initFilename);
-	preview = preview2;
 	videoSize = size2;
 	filename = filename2;
 	framerate = framerate2;
 	format = CV_FOURCC('D', 'I', 'V', 'X');
 	//object = QuadObject(scale);
+	isPerspectiveSet=false;
 
-	if (preview) {
-		int size = 0;
-		glutInit(&size, NULL);
-		//glutInitWindowPosition(0,0);
-		glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
-		glutInitWindowSize(videoSize.width, videoSize.height);
-		glutCreateWindow("MatchMover");
-		glClearColor(0.0, 0.0, 0.0, 1.0);
+
+	//init SDL window
+	if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+		cout << "Error initializing SDL: " << SDL_GetError() << endl;
+		return;
 	}
+	/*const SDL_VideoInfo* videoInfo =*/ SDL_GetVideoInfo();
+	if (SDL_SetVideoMode(videoSize.width, videoSize.height, 32, SDL_OPENGL | SDL_RESIZABLE) == NULL) { //create window
+		cerr << "Error creating SDL window!" << endl;
+		return;
+	}
+
+	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+	SDL_WM_SetCaption("MatchMover", NULL);
+	//Antialiasing (SDL multisampling)
+	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
+	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 4); //16x
+
+	//int size = 0;
+	//glutInit(&size, NULL);
+	//glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
+	//glutInitWindowSize(videoSize.width, videoSize.height);
+	//glutCreateWindow("MatchMover");
+
+	glClearColor(0.0, 0.0, 0.0, 1.0);
 
 	//setup light
 	glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
@@ -118,16 +143,14 @@ void Renderer::readObjectAndLightData(std::string filename) {
 		lightPosition[2] = (double) node["z"];
 		//light = Point3d(light_x, light_y, light_z);
 	} catch (Exception& e) {
+		//if (objectPosition==NULL)
+		//	Point3d(0, 0, 0);
+
+		//lightPosition[0] = 0.0;
+		//lightPosition[1] = 0.0;
+		//lightPosition[2] = 0.0;
 		cout << "Object and light position data could not found/read" << endl;
 	}
-}
-
-/*static*/Point3d Renderer::selectObjectPosition(Mat frame1, Mat frame2, Mat frame3) {
-	//TODO
-	//imshow("video", frames[0]);
-	//+ Mouse-listener -> getPoints -> calc with triangulation 3d-point;
-
-	return Point3d(0, 0, 0);
 }
 
 bool Renderer::openOutputFile() {
@@ -138,39 +161,161 @@ bool Renderer::openOutputFile() {
 		return false;
 }
 
-void handleInputEvents() {
-	//SDL_Event event;
-	//while (SDL_PollEvent(&event)) {
-	//	if (event.type == SDL_QUIT) {
-	//		SDL_Quit();
-	//		exit(0);
-	//	}
-	//}
+void Renderer::showKeyInfo(){
+	cout<< "Keys:" << endl;
+	cout<< " - Video-Speed -" << endl;
+	cout<< "Increase: +" << endl;
+	cout<< "Decrease: -" << endl;
+	cout<< endl;
+	cout<< " - Object -" << endl;
+	cout<< "Increase - x-position: d" << endl;
+	cout<< "Decrease - x-position: a" << endl;
+	cout<< "Increase - y-position: w" << endl;
+	cout<< "Decrease - y-position: s" << endl;
+	cout<< "Increase - z-position: e" << endl;
+	cout<< "Decrease - z-position: q" << endl;
+	cout<< endl;
+	cout<< " - Light -" << endl;
+	cout<< "Increase - x-position: l" << endl;
+	cout<< "Decrease - x-position: j" << endl;
+	cout<< "Increase - y-position: i" << endl;
+	cout<< "Decrease - y-position: k" << endl;
+	cout<< "Increase - z-position: o" << endl;
+	cout<< "Decrease - z-position: u" << endl;
+
+}
+
+void Renderer::handleInputEvents() {
+	SDL_Event event;
+
+	while (SDL_PollEvent(&event)) {
+		if (event.type == SDL_QUIT) {
+			SDL_Quit();
+			exit(0);
+		}
+		if(event.type == SDL_KEYDOWN ){
+			switch (event.key.keysym.sym) {
+			case SDLK_ESCAPE:
+				exit(0);
+				break;
+			//play-speed
+			case SDLK_PLUS:
+				if (speed >= 50)
+					speed -= 50;
+				break;
+			case SDLK_MINUS:
+				speed += 50;
+				break;
+			//object
+			case SDLK_w:
+				objectPosition.y += 5;
+				break;
+			case SDLK_s:
+				objectPosition.y -= 5;
+				break;
+			case SDLK_a:
+				objectPosition.x -= 5;
+				break;
+			case SDLK_d:
+				objectPosition.y += 5;
+				break;
+			case SDLK_q:
+				objectPosition.z -= 5;
+				break;
+			case SDLK_e:
+				objectPosition.z += 5;
+				break;
+			//light
+			case SDLK_i:
+				lightPosition[1] += 5;
+				break;
+			case SDLK_k:
+				lightPosition[1] -= 5;
+				break;
+			case SDLK_j:
+				lightPosition[0] -= 5;
+				break;
+			case SDLK_l:
+				lightPosition[0] += 5;
+				break;
+			case SDLK_u:
+				lightPosition[2] -= 5;
+				break;
+			case SDLK_o:
+				lightPosition[2] += 5;
+				break;
+			default:
+				break;
+			}
+		}
+	}
+}
+
+void Renderer::setupPerspective(){
+	if (!isPerspectiveSet){
+		//setup Frustum
+		//gluPerspective(45.0,videoSize.width/videoSize.height,0,100.0);
+		double zNear=1.5;
+		double zFar=10;
+		glFrustum( 0, videoSize.width, 0, videoSize.height, zNear, zFar );
+		//glOrtho(0, videoSize.width, 0, videoSize.height, -500, 500);
+		isPerspectiveSet=true;
+	}
+}
+
+void Renderer::setupObjectPostion(std::vector<cv::Mat>& video){
+	cout << "Position object and light into the scene" << endl;
+
+	showKeyInfo();
+
+	double cameraposition[16];
+	for (int j = 0; j < 4; j++) {
+		for (int k = 0; k < 4; k++)
+			if (j == k)
+				cameraposition[j * 4 + k] = 1;
+			else
+				cameraposition[j * 4 + k] = 0;
+	}
+
+	setupPerspective();
+
+	for (size_t i = 0; i < video.size(); i++) {
+
+		handleInputEvents();	//handle SDL events
+		SDL_Delay(speed);		//reduce speed
+
+		//TODO remove test...............................................................................
+		double pi = 3.14159;
+		double deg2Rad = pi/180.0;
+		double angleX = 20+(i++);
+		double sx = sin(angleX * deg2Rad);
+		double cx = cos(angleX * deg2Rad);
+		cv::Mat test_t = (cv::Mat_<double>(4, 4) << 1.0, 0.0, 0.0, 200, 0.0, 1.0, 0.0, 50, 0.0, 0.0, 1.0, 1, 0.0, 0.0, 0.0, 1.0);
+		cv::Mat test_r = (cv::Mat_<double>(4, 4) << 1, 0, 0, 0, 0, cx, -sx, 0, 0, sx, cx, 0, 0, 0, 0, 1);
+		setCameraPose(cameraposition, test_t, test_r);
+
+		renderScene(video[i], cameraposition);
+	}
 }
 
 void Renderer::render(std::vector<cv::Mat>& video, std::vector<cv::Mat> rotation, std::vector<cv::Mat> translation) {
 	//open VideoWriter for output-video
 	openOutputFile();
 
-	double camerapostion[16];
+	double cameraposition[16];
 	for (int j = 0; j < 4; j++) {
 		for (int k = 0; k < 4; k++)
 			if (j == k)
-				camerapostion[j * 4 + k] = 1;
+				cameraposition[j * 4 + k] = 1;
 			else
-				camerapostion[j * 4 + k] = 0;
+				cameraposition[j * 4 + k] = 0;
 	}
 
-	//setup Frustum
-	//gluPerspective(45.0,videoSize.width/videoSize.height,0,100.0);
-	double zNear=1.5;
-	double zFar=10;
-	//glFrustum( 0, videoSize.width, 0, videoSize.height, zNear, zFar );
-	glOrtho(0, videoSize.width, 0, videoSize.height, -500, 500);
+	setupPerspective();
 
 	for (size_t i = 0; i < video.size(); i++) {
-		//handle SDL events
-		handleInputEvents();
+		//handleInputEvents();	//handle SDL events
+		//SDL_Delay(speed);		//reduce speed
 
 		//calculate rotation-translation-matrix
 		//setCameraPose(camerapostion, rotation[i], translation[i]);
@@ -185,7 +330,7 @@ void Renderer::render(std::vector<cv::Mat>& video, std::vector<cv::Mat> rotation
 		cv::Mat test_r = (cv::Mat_<double>(4, 4) << 1, 0, 0, 0, 0, cx, -sx, 0, 0, sx, cx, 0, 0, 0, 0, 1);
 		//test_r.at<double>(0, 0) = 0.5;
 		//test_r.at<double>(1, 0) = 0.2;
-		setCameraPose(camerapostion, test_t, test_r);
+		setCameraPose(cameraposition, test_t, test_r);
 
 		//for (int j = 0; j < 4; j++) {
 		//	for (int k = 0; k < 4; k++)
@@ -194,16 +339,8 @@ void Renderer::render(std::vector<cv::Mat>& video, std::vector<cv::Mat> rotation
 		//}
 		//............................................................................................
 
-		renderAndWriteFrame(video[i], camerapostion);
+		renderAndWriteFrame(video[i], cameraposition);
 		writeNextFrame(video[i]);
-
-		char c;
-		if ((c = waitKey(150)) >= 0) {
-			cout << "key pressed: " << c << endl;
-			if (c == 'a')
-				i += 20;
-			//OnKeyPress(c,0,0);
-		}
 	}
 }
 
@@ -244,17 +381,48 @@ void Renderer::renderScene(cv::Mat& background, double cameraposition[16]) {
 		//glRotatef(i++, 1.0f, 1.0f, 0.2f); //TODO
 		//glLoadMatrixd(cameraposition);
 
-		//TODO update light
+		//update light
 		glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
 
 		//draw 3D-Object
 		glPushMatrix();
 			glTranslated(objectPosition.x, objectPosition.y, objectPosition.z); //Position in the room
-			//glMultMatrixf
 
 			glScalef(scale, scale, scale); //TODO
 			glColor4f(0.75, 0.75, 0.75, 1.0);
-			glutSolidTeapot(1);
+			//glutSolidTeapot(1);
+
+			glBegin(GL_QUADS);		// Draw A Quad
+				glVertex3f(1.0f, 1.0f, -1.0f);
+				glVertex3f(-1.0f, 1.0f, -1.0f);
+				glVertex3f(-1.0f, 1.0f, 1.0f);
+				glVertex3f(1.0f, 1.0f, 1.0f);
+
+				glVertex3f(1.0f, -1.0f, 1.0f);
+				glVertex3f(-1.0f, -1.0f, 1.0f);
+				glVertex3f(-1.0f, -1.0f, -1.0f);
+				glVertex3f(1.0f, -1.0f, -1.0f);
+
+				glVertex3f(1.0f, 1.0f, 1.0f);
+				glVertex3f(-1.0f, 1.0f, 1.0f);
+				glVertex3f(-1.0f, -1.0f, 1.0f);
+				glVertex3f(1.0f, -1.0f, 1.0f);
+
+				glVertex3f(1.0f, -1.0f, -1.0f);
+				glVertex3f(-1.0f, -1.0f, -1.0f);
+				glVertex3f(-1.0f, 1.0f, -1.0f);
+				glVertex3f(1.0f, 1.0f, -1.0f);
+
+				glVertex3f(-1.0f, 1.0f, 1.0f);
+				glVertex3f(-1.0f, 1.0f, -1.0f);
+				glVertex3f(-1.0f, -1.0f, -1.0f);
+				glVertex3f(-1.0f, -1.0f, 1.0f);
+
+				glVertex3f(1.0f, 1.0f, -1.0f);
+				glVertex3f(1.0f, 1.0f, 1.0f);
+				glVertex3f(1.0f, -1.0f, 1.0f);
+				glVertex3f(1.0f, -1.0f, -1.0f);
+			glEnd();
 
 			//object.renderObject();
 
@@ -262,7 +430,8 @@ void Renderer::renderScene(cv::Mat& background, double cameraposition[16]) {
 	glPopMatrix();
 
 	glFlush();
-	glutSwapBuffers();
+	//glutSwapBuffers();
+	SDL_GL_SwapBuffers();
 }
 
 double* Renderer::setCameraPose(double modelViewMatrixRecoveredCamera[16], cv::Mat& rotation, cv::Mat& translation) {
