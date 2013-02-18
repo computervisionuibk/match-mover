@@ -32,7 +32,9 @@ int main(int argc, char* argv[]) {
 	}
 
 	string video_filename = std::string(argv[1]);
-	string data_filename = std::string(argv[2]);
+	std::string* data_filename = 0;
+	if (argc >=3)
+		data_filename = new std::string(argv[2]);
 
 	vector<Mat> frames;
 	VideoCapture cap(video_filename);
@@ -52,11 +54,11 @@ int main(int argc, char* argv[]) {
 	renderer.render(frames, frames, frames);
 }
 
-Renderer::Renderer(std::string filename2, cv::Size size2, double framerate2, std::string initFilename) {
+Renderer::Renderer(std::string filename2, cv::Size size2, double framerate2, std::string* initFilename) {
 	init(filename2, initFilename, size2, framerate2);
 }
 
-Renderer::Renderer(std::string filename, cv::VideoCapture inputVideo, std::string initFilename) {
+Renderer::Renderer(std::string filename, cv::VideoCapture inputVideo, std::string* initFilename) {
 	Size s = Size((int) inputVideo.get(CV_CAP_PROP_FRAME_WIDTH), (int) inputVideo.get(CV_CAP_PROP_FRAME_HEIGHT));
 	double framerate = inputVideo.get(CV_CAP_PROP_FPS);
 
@@ -66,23 +68,24 @@ Renderer::Renderer(std::string filename, cv::VideoCapture inputVideo, std::strin
 Renderer::~Renderer() {
 }
 
-void Renderer::init(std::string filename2, string initFilename, cv::Size size2, double framerate2) {
-	readObjectAndLightData(initFilename);
+void Renderer::init(std::string filename2, std::string* initFilename, cv::Size size2, double framerate2) {
+	objectPositionFilename = initFilename;
+	readObjectAndLightData();
+
 	videoSize = size2;
-	filename = filename2;
+	outputVideoFilename = filename2;
 	framerate = framerate2;
 	format = CV_FOURCC('D', 'I', 'V', 'X');
 	//object = QuadObject(scale);
 	isPerspectiveSet=false;
 
-
 	//init SDL window
 	if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-		cout << "Error initializing SDL: " << SDL_GetError() << endl;
+		cout << "Video initialization failed: " << SDL_GetError() << endl;
 		return;
 	}
 	/*const SDL_VideoInfo* videoInfo =*/ SDL_GetVideoInfo();
-	if (SDL_SetVideoMode(videoSize.width, videoSize.height, 32, SDL_OPENGL | SDL_RESIZABLE) == NULL) { //create window
+	if (SDL_SetVideoMode(videoSize.width, videoSize.height, 32, SDL_OPENGL ) == NULL) { //create window
 		cerr << "Error creating SDL window!" << endl;
 		return;
 	}
@@ -93,11 +96,6 @@ void Renderer::init(std::string filename2, string initFilename, cv::Size size2, 
 	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
 	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 4); //16x
 
-	//int size = 0;
-	//glutInit(&size, NULL);
-	//glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
-	//glutInitWindowSize(videoSize.width, videoSize.height);
-	//glutCreateWindow("MatchMover");
 
 	glClearColor(0.0, 0.0, 0.0, 1.0);
 
@@ -126,35 +124,41 @@ void Renderer::init(std::string filename2, string initFilename, cv::Size size2, 
 	glEnable(GL_COLOR_MATERIAL);
 }
 
-void Renderer::readObjectAndLightData(std::string filename) {
-	try {
-		FileStorage fs(filename, FileStorage::READ);
-		FileNode node = fs["object"];
-		double object_x = (double) node["x"];
-		double object_y = (double) node["y"];
-		double object_z = (double) node["z"];
-		scale = (double) node["scale"];
+void Renderer::readObjectAndLightData() {
+	objectPosition = Point3d(0, 0, 1);
+	objectRotation[0]=0;
+	objectRotation[1]=0;
+	objectRotation[2]=0;
+	scale = 1;
 
-		objectPosition = Point3d(object_x, object_y, object_z);
+	lightPosition[0] = 0.0;
+	lightPosition[1] = 0.0;
+	lightPosition[2] = 0.0;
 
-		node = fs["light"];
-		lightPosition[0] = (double) node["x"];
-		lightPosition[1] = (double) node["y"];
-		lightPosition[2] = (double) node["z"];
-		//light = Point3d(light_x, light_y, light_z);
-	} catch (Exception& e) {
-		//if (objectPosition==NULL)
-		//	Point3d(0, 0, 0);
+	if (objectPositionFilename != NULL){
+		try {
+			FileStorage fs(*objectPositionFilename, FileStorage::READ);
+			FileNode node = fs["object"];
+			double object_x = (double) node["x"];
+			double object_y = (double) node["y"];
+			double object_z = (double) node["z"];
+			scale = (double) node["scale"];
 
-		//lightPosition[0] = 0.0;
-		//lightPosition[1] = 0.0;
-		//lightPosition[2] = 0.0;
-		cout << "Object and light position data could not found/read" << endl;
+			objectPosition = Point3d(object_x, object_y, object_z);
+
+			node = fs["light"];
+			lightPosition[0] = (double) node["x"];
+			lightPosition[1] = (double) node["y"];
+			lightPosition[2] = (double) node["z"];
+			//light = Point3d(light_x, light_y, light_z);
+		} catch (Exception& e) {
+			cout << "Object and light position data could not found/read" << endl;
+		}
 	}
 }
 
 bool Renderer::openOutputFile() {
-	videoWriter.open(filename, format, framerate, videoSize, true);
+	videoWriter.open(outputVideoFilename, format, framerate, videoSize, true);
 	if (videoWriter.isOpened())
 		return true;
 	else
@@ -174,6 +178,9 @@ void Renderer::showKeyInfo(){
 	cout<< "Decrease - y-position: s" << endl;
 	cout<< "Increase - z-position: e" << endl;
 	cout<< "Decrease - z-position: q" << endl;
+	cout<< "Rotate - x-axis: y & x" << endl;
+	cout<< "Rotate - y-axis: c & v" << endl;
+	cout<< "Rotate - z-axis: b & n" << endl;
 	cout<< endl;
 	cout<< " - Light -" << endl;
 	cout<< "Increase - x-position: l" << endl;
@@ -208,41 +215,59 @@ void Renderer::handleInputEvents() {
 				break;
 			//object
 			case SDLK_w:
-				objectPosition.y += 5;
+				objectPosition.y += 1;
 				break;
 			case SDLK_s:
-				objectPosition.y -= 5;
+				objectPosition.y -= 1;
 				break;
 			case SDLK_a:
-				objectPosition.x -= 5;
+				objectPosition.x -= 1;
 				break;
 			case SDLK_d:
-				objectPosition.y += 5;
+				objectPosition.x += 1;
 				break;
 			case SDLK_q:
-				objectPosition.z -= 5;
+				objectPosition.z += 1;
 				break;
 			case SDLK_e:
-				objectPosition.z += 5;
+				objectPosition.z -= 1;
+				break;
+			case SDLK_y:
+				objectRotation[0] -= 5;
+				break;
+			case SDLK_x:
+				objectRotation[0] += 5;
+				break;
+			case SDLK_c:
+				objectRotation[1] -= 5;
+				break;
+			case SDLK_v:
+				objectRotation[1] += 5;
+				break;
+			case SDLK_b:
+				objectRotation[2] -= 5;
+				break;
+			case SDLK_n:
+				objectRotation[2] += 5;
 				break;
 			//light
 			case SDLK_i:
-				lightPosition[1] += 5;
+				lightPosition[1] += 1;
 				break;
 			case SDLK_k:
-				lightPosition[1] -= 5;
+				lightPosition[1] -= 1;
 				break;
 			case SDLK_j:
-				lightPosition[0] -= 5;
+				lightPosition[0] -= 1;
 				break;
 			case SDLK_l:
-				lightPosition[0] += 5;
+				lightPosition[0] += 1;
 				break;
 			case SDLK_u:
-				lightPosition[2] -= 5;
+				lightPosition[2] -= 1;
 				break;
 			case SDLK_o:
-				lightPosition[2] += 5;
+				lightPosition[2] += 1;
 				break;
 			default:
 				break;
@@ -254,12 +279,15 @@ void Renderer::handleInputEvents() {
 void Renderer::setupPerspective(){
 	if (!isPerspectiveSet){
 		//setup Frustum
-		//gluPerspective(45.0,videoSize.width/videoSize.height,0,100.0);
-		//double zNear=1.5;
-		//double zFar=10;
-		//glFrustum( 0, videoSize.width, 0, videoSize.height, zNear, zFar );
-		glOrtho(0, videoSize.width, 0, videoSize.height, -500, 500);
+		gluPerspective(45.0,videoSize.width/videoSize.height,0.1,1000.0);
+		//glLoadIdentity();
+		//	double zNear=0.1;
+		//	double zFar=100;
+		//	glFrustum( -videoSize.width/2, videoSize.width, -videoSize.height/2, videoSize.height/2, zNear, zFar );
+		//glOrtho(0, videoSize.width, 0, videoSize.height, -500, 500);
 		isPerspectiveSet=true;
+		//glPopMatrix();
+		//glMatrixMode(GL_MODELVIEW);
 	}
 }
 
@@ -287,10 +315,10 @@ void Renderer::setupObjectPostion(std::vector<cv::Mat>& video){
 		//TODO remove test...............................................................................
 		double pi = 3.14159;
 		double deg2Rad = pi/180.0;
-		double angleX = 20+(i++);
+		double angleX = 20/*+(i++)*/;
 		double sx = sin(angleX * deg2Rad);
 		double cx = cos(angleX * deg2Rad);
-		cv::Mat test_t = (cv::Mat_<double>(4, 4) << 1.0, 0.0, 0.0, 200, 0.0, 1.0, 0.0, 50, 0.0, 0.0, 1.0, 1, 0.0, 0.0, 0.0, 1.0);
+		cv::Mat test_t = (cv::Mat_<double>(4, 4) << 1.0, 0.0, 0.0, 3, 0.0, 1.0, 0.0, 3, 0.0, 0.0, 1.0, 1, 0.0, 0.0, 0.0, 1.0);
 		cv::Mat test_r = (cv::Mat_<double>(4, 4) << 1, 0, 0, 0, 0, cx, -sx, 0, 0, sx, cx, 0, 0, 0, 0, 1);
 		setCameraPose(cameraposition, test_t, test_r);
 
@@ -314,8 +342,7 @@ void Renderer::render(std::vector<cv::Mat>& video, std::vector<cv::Mat> rotation
 	setupPerspective();
 
 	for (size_t i = 0; i < video.size(); i++) {
-		//handleInputEvents();	//handle SDL events
-		//SDL_Delay(speed);		//reduce speed
+		SDL_Delay(10);
 
 		//calculate rotation-translation-matrix
 		//setCameraPose(camerapostion, rotation[i], translation[i]);
@@ -326,7 +353,7 @@ void Renderer::render(std::vector<cv::Mat>& video, std::vector<cv::Mat> rotation
 		double angleX = 20+(i++);
 		double sx = sin(angleX * deg2Rad);
 		double cx = cos(angleX * deg2Rad);
-		cv::Mat test_t = (cv::Mat_<double>(4, 4) << 1.0, 0.0, 0.0, 200, 0.0, 1.0, 0.0, 50, 0.0, 0.0, 1.0, 1, 0.0, 0.0, 0.0, 1.0);
+		cv::Mat test_t = (cv::Mat_<double>(4, 4) << 1.0, 0.0, 0.0, 0, 0.0, 1.0, 0.0, 0, 0.0, 0.0, 1.0, 1, 0.0, 0.0, 0.0, 1.0);
 		cv::Mat test_r = (cv::Mat_<double>(4, 4) << 1, 0, 0, 0, 0, cx, -sx, 0, 0, sx, cx, 0, 0, 0, 0, 1);
 		//test_r.at<double>(0, 0) = 0.5;
 		//test_r.at<double>(1, 0) = 0.2;
@@ -363,8 +390,7 @@ void Renderer::renderScene(cv::Mat& background, double cameraposition[16]) {
 	glMatrixMode(GL_PROJECTION);
 	glPushMatrix();
 		glLoadIdentity();
-		glOrtho(0, videoSize.width, 0, videoSize.height, -500, 500); //set ortho view
-		//gluPerspective(45.0,videoSize.width/videoSize.height,0,100.0);
+		glOrtho(0, videoSize.width, 0, videoSize.height, 0, 10); //set ortho view
 		glMatrixMode(GL_MODELVIEW);
 
 		//Draw background - (slow solution)
@@ -378,7 +404,6 @@ void Renderer::renderScene(cv::Mat& background, double cameraposition[16]) {
 
 	glPushMatrix();
 		//set camerapostion
-		//glRotatef(i++, 1.0f, 1.0f, 0.2f); //TODO
 		//glLoadMatrixd(cameraposition);
 
 		//update light
@@ -386,7 +411,10 @@ void Renderer::renderScene(cv::Mat& background, double cameraposition[16]) {
 
 		//draw 3D-Object
 		glPushMatrix();
-			glTranslated(objectPosition.x, objectPosition.y, objectPosition.z); //Position in the room
+			glTranslated(objectPosition.x, objectPosition.y, -objectPosition.z); //Position in the room
+			glRotated(objectRotation[0], 1, 0, 0);
+			glRotated(objectRotation[1], 0, 1, 0);
+			glRotated(objectRotation[2], 0, 0, 1);
 
 			glScalef(scale, scale, scale); //TODO
 			glColor4f(0.75, 0.75, 0.75, 1.0);
