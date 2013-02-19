@@ -3,13 +3,12 @@
 #include <cv.h>
 #include <GL/glut.h>
 #include <highgui.h>
-#include "RenderObject.h"
 
 
 class Renderer {
 public:
-	Renderer(std::string filename, cv::Size size, double framerate, std::string* initFilename, cv::Mat K);
-	Renderer(std::string filename, cv::VideoCapture video, std::string* initFilename, cv::Mat K);
+	Renderer(std::string inputVideoFilename, cv::Size videoResolution, double framerate, std::string* initObjectFilename, cv::Mat K/*kalibration*/);
+	Renderer(std::string inputVideoFilename, cv::VideoCapture video, std::string* initObjectFilename, cv::Mat K/*kalibration*/);
 	virtual ~Renderer();
 	void render(std::vector<cv::Mat>& video, std::vector<cv::Mat> rotation, std::vector<cv::Mat> translation);
 	void setupObjectPostion(std::vector<cv::Mat>& previewVideo, std::vector<cv::Mat> rotation, std::vector<cv::Mat> translation);
