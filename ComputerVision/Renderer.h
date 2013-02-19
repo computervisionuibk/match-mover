@@ -7,8 +7,8 @@
 
 class Renderer {
 public:
-	Renderer(std::string inputVideoFilename, cv::Size videoResolution, double framerate, std::string* initObjectFilename, cv::Mat K/*kalibration*/);
-	Renderer(std::string inputVideoFilename, cv::VideoCapture video, std::string* initObjectFilename, cv::Mat K/*kalibration*/);
+	Renderer(std::string _outputVideoFilename, cv::Size videoResolution, double framerate, std::string* initObjectFilename, cv::Mat K/*kalibration*/);
+	Renderer(std::string _outputVideoFilename, cv::VideoCapture video, std::string* initObjectFilename, cv::Mat K/*kalibration*/);
 	virtual ~Renderer();
 	void render(std::vector<cv::Mat>& video, std::vector<cv::Mat> rotation, std::vector<cv::Mat> translation);
 	void setupObjectPostion(std::vector<cv::Mat>& previewVideo, std::vector<cv::Mat> rotation, std::vector<cv::Mat> translation);
