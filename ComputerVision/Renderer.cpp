@@ -45,30 +45,28 @@ int main(int argc, char* argv[]) {
 		frames.push_back(frame.clone());
 	}
 
-	//TODO select object-position
+	cv::Mat K = (cv::Mat_<double>(3,4) <<  50, 0.0, 10.0, 0.0, 0.0, 50.0, 10.0, 0, 0.0, 0.0, -1.0 , 0);
+	Renderer renderer(video_filename + "_render2.avi", cap, data_filename, K);
 
-	Renderer renderer(video_filename + "_render2.avi", cap, data_filename);
-
-	renderer.setupObjectPostion(frames);
-
+	renderer.setupObjectPostion(frames, frames, frames);
 	renderer.render(frames, frames, frames);
 }
 
-Renderer::Renderer(std::string filename2, cv::Size size2, double framerate2, std::string* initFilename) {
-	init(filename2, initFilename, size2, framerate2);
+Renderer::Renderer(std::string filename2, cv::Size size2, double framerate2, std::string* initFilename, cv::Mat K) {
+	init(filename2, initFilename, size2, framerate2, K);
 }
 
-Renderer::Renderer(std::string filename, cv::VideoCapture inputVideo, std::string* initFilename) {
+Renderer::Renderer(std::string filename, cv::VideoCapture inputVideo, std::string* initFilename, cv::Mat K) {
 	Size s = Size((int) inputVideo.get(CV_CAP_PROP_FRAME_WIDTH), (int) inputVideo.get(CV_CAP_PROP_FRAME_HEIGHT));
 	double framerate = inputVideo.get(CV_CAP_PROP_FPS);
 
-	init(filename, initFilename, s, framerate);
+	init(filename, initFilename, s, framerate, K);
 }
 
 Renderer::~Renderer() {
 }
 
-void Renderer::init(std::string filename2, std::string* initFilename, cv::Size size2, double framerate2) {
+void Renderer::init(std::string filename2, std::string* initFilename, cv::Size size2, double framerate2, cv::Mat K_) {
 	objectPositionFilename = initFilename;
 	readObjectAndLightData();
 
@@ -76,6 +74,7 @@ void Renderer::init(std::string filename2, std::string* initFilename, cv::Size s
 	outputVideoFilename = filename2;
 	framerate = framerate2;
 	format = CV_FOURCC('D', 'I', 'V', 'X');
+	K=K_;
 	//object = QuadObject(scale);
 	isPerspectiveSet=false;
 
@@ -125,7 +124,7 @@ void Renderer::init(std::string filename2, std::string* initFilename, cv::Size s
 }
 
 void Renderer::readObjectAndLightData() {
-	objectPosition = Point3d(0, 0, 1);
+	objectPosition = Point3d(0, 0, -3);
 	objectRotation[0]=0;
 	objectRotation[1]=0;
 	objectRotation[2]=0;
@@ -279,19 +278,32 @@ void Renderer::handleInputEvents() {
 void Renderer::setupPerspective(){
 	if (!isPerspectiveSet){
 		//setup Frustum
-		gluPerspective(45.0,videoSize.width/videoSize.height,0.1,1000.0);
-		//glLoadIdentity();
-		//	double zNear=0.1;
-		//	double zFar=100;
-		//	glFrustum( -videoSize.width/2, videoSize.width, -videoSize.height/2, videoSize.height/2, zNear, zFar );
-		//glOrtho(0, videoSize.width, 0, videoSize.height, -500, 500);
+		glLoadIdentity();
+		double zNear=0.1;
+		double zFar=1000;
+		//focal length
+		double fx = K.at<double>(0, 0);
+		double fy = K.at<double>(1, 1);
+		//principal point
+		double cx = K.at<double>(0, 2);
+		double cy = K.at<double>(1, 2);
+
+		double aspectRatio = (videoSize.width / videoSize.height) * (fy / fx);
+		double fovy = 2 * atan(videoSize.height / (2.0 * fy)); 	//radiant
+		double frustumHeight = tan(fovy / 2.0) * zNear;
+		double frustumWidth = aspectRatio * frustumHeight;
+
+		//gluPerspective(45.0,videoSize.width/videoSize.height,0.1,1000.0);
+		//gluPerspective(fovy, aspectRatio, zNear, zFar);
+		glFrustum(-frustumWidth , frustumWidth , -frustumHeight, frustumHeight, zNear,	zFar);
+		//glFrustum(-zNear*cx/fx, zNear*(videoSize.width-cx)/fx, -zNear*cy/fy, zNear*(videoSize.height-cy)/fy, zNear, zFar);
+		//glFrustum( -videoSize.width/2, videoSize.width, -videoSize.height/2, videoSize.height/2, zNear, zFar );
 		isPerspectiveSet=true;
-		//glPopMatrix();
-		//glMatrixMode(GL_MODELVIEW);
+
 	}
 }
 
-void Renderer::setupObjectPostion(std::vector<cv::Mat>& video){
+void Renderer::setupObjectPostion(std::vector<cv::Mat>& video, std::vector<cv::Mat> rotation, std::vector<cv::Mat> translation){
 	cout << "Position object and light into the scene" << endl;
 
 	showKeyInfo();
@@ -307,10 +319,14 @@ void Renderer::setupObjectPostion(std::vector<cv::Mat>& video){
 
 	setupPerspective();
 
+	cout << "video-size: "<<video.size() << endl;
 	for (size_t i = 0; i < video.size(); i++) {
 
 		handleInputEvents();	//handle SDL events
 		SDL_Delay(speed);		//reduce speed
+
+		//calculate rotation-translation-matrix
+		//setCameraPose(cameraposition, rotation[i], translation[i]);
 
 		//TODO remove test...............................................................................
 		double pi = 3.14159;
@@ -320,7 +336,7 @@ void Renderer::setupObjectPostion(std::vector<cv::Mat>& video){
 		double cx = cos(angleX * deg2Rad);
 		cv::Mat test_t = (cv::Mat_<double>(4, 4) << 1.0, 0.0, 0.0, 3, 0.0, 1.0, 0.0, 3, 0.0, 0.0, 1.0, 1, 0.0, 0.0, 0.0, 1.0);
 		cv::Mat test_r = (cv::Mat_<double>(4, 4) << 1, 0, 0, 0, 0, cx, -sx, 0, 0, sx, cx, 0, 0, 0, 0, 1);
-		setCameraPose(cameraposition, test_t, test_r);
+		setCameraPosition(cameraposition, test_t, test_r);
 
 		renderScene(video[i], cameraposition);
 	}
@@ -328,6 +344,7 @@ void Renderer::setupObjectPostion(std::vector<cv::Mat>& video){
 
 void Renderer::render(std::vector<cv::Mat>& video, std::vector<cv::Mat> rotation, std::vector<cv::Mat> translation) {
 	//open VideoWriter for output-video
+	cout << "Output-video" << endl;
 	openOutputFile();
 
 	double cameraposition[16];
@@ -345,26 +362,19 @@ void Renderer::render(std::vector<cv::Mat>& video, std::vector<cv::Mat> rotation
 		SDL_Delay(10);
 
 		//calculate rotation-translation-matrix
-		//setCameraPose(camerapostion, rotation[i], translation[i]);
+		//setCameraPose(cameraposition, rotation[i], translation[i]);
 
 		//TODO remove test...............................................................................
 		double pi = 3.14159;
 		double deg2Rad = pi/180.0;
-		double angleX = 20+(i++);
+		double angleX = 20;
 		double sx = sin(angleX * deg2Rad);
 		double cx = cos(angleX * deg2Rad);
 		cv::Mat test_t = (cv::Mat_<double>(4, 4) << 1.0, 0.0, 0.0, 0, 0.0, 1.0, 0.0, 0, 0.0, 0.0, 1.0, 1, 0.0, 0.0, 0.0, 1.0);
 		cv::Mat test_r = (cv::Mat_<double>(4, 4) << 1, 0, 0, 0, 0, cx, -sx, 0, 0, sx, cx, 0, 0, 0, 0, 1);
 		//test_r.at<double>(0, 0) = 0.5;
 		//test_r.at<double>(1, 0) = 0.2;
-		setCameraPose(cameraposition, test_t, test_r);
-
-		//for (int j = 0; j < 4; j++) {
-		//	for (int k = 0; k < 4; k++)
-		//		cout <</*camerapostion[j*4+k]*/test_t.at<double>(j, k) << " ";
-		//	cout << endl;
-		//}
-		//............................................................................................
+		setCameraPosition(cameraposition, test_t, test_r);
 
 		renderAndWriteFrame(video[i], cameraposition);
 		writeNextFrame(video[i]);
@@ -373,7 +383,7 @@ void Renderer::render(std::vector<cv::Mat>& video, std::vector<cv::Mat> rotation
 
 void Renderer::renderAndWriteFrame(cv::Mat& background, double cameraposition[16]) {
 	cv::Mat renderedImage(videoSize, CV_8UC3);
-	cv::flip(background, background, 0); //flip image - OpenGL and OpenCV different imagedata-structure
+	cv::flip(background, background, 0); 	//flip image - OpenGL and OpenCV different imagedata-structure
 
 	//render object
 	renderScene(background, cameraposition);
@@ -411,7 +421,7 @@ void Renderer::renderScene(cv::Mat& background, double cameraposition[16]) {
 
 		//draw 3D-Object
 		glPushMatrix();
-			glTranslated(objectPosition.x, objectPosition.y, -objectPosition.z); //Position in the room
+			glTranslated(objectPosition.x, objectPosition.y, objectPosition.z); //Position in the room
 			glRotated(objectRotation[0], 1, 0, 0);
 			glRotated(objectRotation[1], 0, 1, 0);
 			glRotated(objectRotation[2], 0, 0, 1);
@@ -462,35 +472,30 @@ void Renderer::renderScene(cv::Mat& background, double cameraposition[16]) {
 	SDL_GL_SwapBuffers();
 }
 
-double* Renderer::setCameraPose(double modelViewMatrixRecoveredCamera[16], cv::Mat& rotation, cv::Mat& translation) {
-	//construct modelview matrix from rotation and translation (reversed y and z axis from OpenCV to OpenGL)
-	// Left  Up  Fwd  Translation
-	//   R   R   R |  t
-	//  -R  -R  -R | -t
-	//  -R  -R  -R | -t
-	//   0   0   0 |  1
+double* Renderer::setCameraPosition(double modelViewCamera[16], cv::Mat& rotation, cv::Mat& translation) {
+	//y and z axis are in OpenCV to OpenGL reversed
 	//first column
-	modelViewMatrixRecoveredCamera[0] = rotation.at<double>(0, 0);
-	modelViewMatrixRecoveredCamera[1] = -rotation.at<double>(1, 0);
-	modelViewMatrixRecoveredCamera[2] = -rotation.at<double>(2, 0);
-	modelViewMatrixRecoveredCamera[3] = 0.0;
+	modelViewCamera[0] = rotation.at<double>(0, 0);
+	modelViewCamera[1] = -rotation.at<double>(1, 0);
+	modelViewCamera[2] = -rotation.at<double>(2, 0);
+	modelViewCamera[3] = 0.0;
 	//second column
-	modelViewMatrixRecoveredCamera[4] = rotation.at<double>(0, 1);
-	modelViewMatrixRecoveredCamera[5] = -rotation.at<double>(1, 1);
-	modelViewMatrixRecoveredCamera[6] = -rotation.at<double>(2, 1);
-	modelViewMatrixRecoveredCamera[7] = 0.0;
+	modelViewCamera[4] = rotation.at<double>(0, 1);
+	modelViewCamera[5] = -rotation.at<double>(1, 1);
+	modelViewCamera[6] = -rotation.at<double>(2, 1);
+	modelViewCamera[7] = 0.0;
 	//third column
-	modelViewMatrixRecoveredCamera[8] = rotation.at<double>(0, 2);
-	modelViewMatrixRecoveredCamera[9] = -rotation.at<double>(1, 2);
-	modelViewMatrixRecoveredCamera[10] = -rotation.at<double>(2, 2);
-	modelViewMatrixRecoveredCamera[11] = 0.0;
+	modelViewCamera[8] = rotation.at<double>(0, 2);
+	modelViewCamera[9] = -rotation.at<double>(1, 2);
+	modelViewCamera[10] = -rotation.at<double>(2, 2);
+	modelViewCamera[11] = 0.0;
 	//fourth column
-	modelViewMatrixRecoveredCamera[12] = translation.at<double>(0, 0);
-	modelViewMatrixRecoveredCamera[13] = -translation.at<double>(1, 0);
-	modelViewMatrixRecoveredCamera[14] = -translation.at<double>(2, 0);
-	modelViewMatrixRecoveredCamera[15] = 1.0;
+	modelViewCamera[12] = translation.at<double>(0, 0);
+	modelViewCamera[13] = -translation.at<double>(1, 0);
+	modelViewCamera[14] = -translation.at<double>(2, 0);
+	modelViewCamera[15] = 1.0;
 
-	return modelViewMatrixRecoveredCamera;
+	return modelViewCamera;
 }
 
 void Renderer::writeNextFrame(cv::Mat& frame) {
