@@ -12,6 +12,7 @@ public:
 	virtual ~Renderer();
 	void render(std::vector<cv::Mat>& video, std::vector<cv::Mat> rotation, std::vector<cv::Mat> translation);
 	void setupObjectPostion(std::vector<cv::Mat>& previewVideo, std::vector<cv::Mat> rotation, std::vector<cv::Mat> translation);
+	void showKeyInfo();
 private:
 	cv::VideoWriter videoWriter;
 	std::string outputVideoFilename;
@@ -38,5 +39,4 @@ private:
 	void renderScene(cv::Mat& background, double cameraposition[16]);
 	double* setCameraPosition(double modelViewMatrixRecoveredCamera[16], cv::Mat& rotation, cv::Mat& translation);
 	void handleInputEvents();
-	void showKeyInfo();
 };
