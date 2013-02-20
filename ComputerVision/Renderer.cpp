@@ -202,6 +202,7 @@ void Renderer::handleInputEvents() {
 		case SDLK_ESCAPE:
 			exit(0);
 			break;
+		case SDLK_RETURN:
 		case SDLK_KP_ENTER:
 			play = false;
 			break;
