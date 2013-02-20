@@ -16,13 +16,8 @@
 using namespace cv;
 using namespace std;
 
-int i = 0; //TODO remove
-int frame = 0; //TODO remove
-int speed = 100;
-std::vector<cv::Mat> previewVideo;
-void handleInputEvents(unsigned char key, int x, int y);
-void keyPressed (unsigned char key, int x, int y);
-//void onDisplay();
+int frame = 0;
+bool play=true;
 
 int main(int argc, char* argv[]) {
 
@@ -48,15 +43,17 @@ int main(int argc, char* argv[]) {
 	cv::Mat K = (cv::Mat_<double>(3,4) <<  50, 0.0, 10.0, 0.0, 0.0, 50.0, 10.0, 0, 0.0, 0.0, -1.0 , 0);
 	Renderer renderer(video_filename + "_render2.avi", cap, data_filename, K);
 
-	renderer.setupObjectPostion(frames, frames, frames);
-	renderer.render(frames, frames, frames);
+	renderer.setupObjectPostion(frames, /*translations*/frames, /*rotations*/frames);
+	renderer.render(frames, /*translations*/frames, /*rotations*/frames);
 }
 
 Renderer::Renderer(std::string filename2, cv::Size size2, double framerate2, std::string* initFilename, cv::Mat K) {
+	cout << filename2 << endl;
 	init(filename2, initFilename, size2, framerate2, K);
 }
 
 Renderer::Renderer(std::string filename, cv::VideoCapture inputVideo, std::string* initFilename, cv::Mat K) {
+	cout << filename << endl;
 	Size s = Size((int) inputVideo.get(CV_CAP_PROP_FRAME_WIDTH), (int) inputVideo.get(CV_CAP_PROP_FRAME_HEIGHT));
 	double framerate = inputVideo.get(CV_CAP_PROP_FPS);
 
@@ -166,9 +163,8 @@ bool Renderer::openOutputFile() {
 
 void Renderer::showKeyInfo(){
 	cout<< "Keys:" << endl;
-	cout<< " - Video-Speed -" << endl;
-	cout<< "Increase: +" << endl;
-	cout<< "Decrease: -" << endl;
+	cout<< " - Frame -" << endl;
+	cout<< "Change frame: + & -" << endl;
 	cout<< endl;
 	cout<< " - Object -" << endl;
 	cout<< "Increase - x-position: d" << endl;
@@ -188,89 +184,93 @@ void Renderer::showKeyInfo(){
 	cout<< "Decrease - y-position: k" << endl;
 	cout<< "Increase - z-position: o" << endl;
 	cout<< "Decrease - z-position: u" << endl;
-
+	cout<< endl;
+	cout<< "Finish positioning: Enter" << endl;
 }
 
 void Renderer::handleInputEvents() {
 	SDL_Event event;
 
-	while (SDL_PollEvent(&event)) {
+	SDL_WaitEvent(&event);
+
 		if (event.type == SDL_QUIT) {
-			SDL_Quit();
+		SDL_Quit();
+		exit(0);
+	}
+	if (event.type == SDL_KEYDOWN) {
+		switch (event.key.keysym.sym) {
+		case SDLK_ESCAPE:
 			exit(0);
-		}
-		if(event.type == SDL_KEYDOWN ){
-			switch (event.key.keysym.sym) {
-			case SDLK_ESCAPE:
-				exit(0);
-				break;
-			//play-speed
-			case SDLK_PLUS:
-				if (speed >= 50)
-					speed -= 50;
-				break;
-			case SDLK_MINUS:
-				speed += 50;
-				break;
+			break;
+		case SDLK_KP_ENTER:
+			play = false;
+			break;
+			//change frame
+		case SDLK_PLUS:
+			frame++;
+			break;
+		case SDLK_MINUS:
+			if (frame > 0)
+				frame--;
+			break;
 			//object
-			case SDLK_w:
-				objectPosition.y += 1;
-				break;
-			case SDLK_s:
-				objectPosition.y -= 1;
-				break;
-			case SDLK_a:
-				objectPosition.x -= 1;
-				break;
-			case SDLK_d:
-				objectPosition.x += 1;
-				break;
-			case SDLK_q:
-				objectPosition.z += 1;
-				break;
-			case SDLK_e:
-				objectPosition.z -= 1;
-				break;
-			case SDLK_y:
-				objectRotation[0] -= 5;
-				break;
-			case SDLK_x:
-				objectRotation[0] += 5;
-				break;
-			case SDLK_c:
-				objectRotation[1] -= 5;
-				break;
-			case SDLK_v:
-				objectRotation[1] += 5;
-				break;
-			case SDLK_b:
-				objectRotation[2] -= 5;
-				break;
-			case SDLK_n:
-				objectRotation[2] += 5;
-				break;
+		case SDLK_w:
+			objectPosition.y += 1;
+			break;
+		case SDLK_s:
+			objectPosition.y -= 1;
+			break;
+		case SDLK_a:
+			objectPosition.x -= 1;
+			break;
+		case SDLK_d:
+			objectPosition.x += 1;
+			break;
+		case SDLK_q:
+			objectPosition.z += 1;
+			break;
+		case SDLK_e:
+			objectPosition.z -= 1;
+			break;
+		case SDLK_y:
+			objectRotation[0] -= 5;
+			break;
+		case SDLK_x:
+			objectRotation[0] += 5;
+			break;
+		case SDLK_c:
+			objectRotation[1] -= 5;
+			break;
+		case SDLK_v:
+			objectRotation[1] += 5;
+			break;
+		case SDLK_b:
+			objectRotation[2] -= 5;
+			break;
+		case SDLK_n:
+			objectRotation[2] += 5;
+			break;
 			//light
-			case SDLK_i:
-				lightPosition[1] += 1;
-				break;
-			case SDLK_k:
-				lightPosition[1] -= 1;
-				break;
-			case SDLK_j:
-				lightPosition[0] -= 1;
-				break;
-			case SDLK_l:
-				lightPosition[0] += 1;
-				break;
-			case SDLK_u:
-				lightPosition[2] -= 1;
-				break;
-			case SDLK_o:
-				lightPosition[2] += 1;
-				break;
-			default:
-				break;
-			}
+		case SDLK_i:
+			lightPosition[1] += 1;
+			break;
+		case SDLK_k:
+			lightPosition[1] -= 1;
+			break;
+		case SDLK_j:
+			lightPosition[0] -= 1;
+			break;
+		case SDLK_l:
+			lightPosition[0] += 1;
+			break;
+		case SDLK_u:
+			lightPosition[2] -= 1;
+			break;
+		case SDLK_o:
+			lightPosition[2] += 1;
+			break;
+		default:
+			break;
 		}
 	}
 }
@@ -285,8 +285,8 @@ void Renderer::setupPerspective(){
 		double fx = K.at<double>(0, 0);
 		double fy = K.at<double>(1, 1);
 		//principal point
-		double cx = K.at<double>(0, 2);
-		double cy = K.at<double>(1, 2);
+		//double cx = K.at<double>(0, 2);
+		//double cy = K.at<double>(1, 2);
 
 		double aspectRatio = (videoSize.width / videoSize.height) * (fy / fx);
 		double fovy = 2 * atan(videoSize.height / (2.0 * fy)); 	//radiant
@@ -320,25 +320,13 @@ void Renderer::setupObjectPostion(std::vector<cv::Mat>& video, std::vector<cv::M
 	setupPerspective();
 
 	cout << "video-size: "<<video.size() << endl;
-	for (size_t i = 0; i < video.size(); i++) {
+	while(play) {
+		//calculate rotation-translation-matrix
+		//setCameraPose(cameraposition, rotation[frame], translation[frame]);
+		renderScene(video[frame], cameraposition);
 
 		handleInputEvents();	//handle SDL events
-		SDL_Delay(speed);		//reduce speed
-
-		//calculate rotation-translation-matrix
-		//setCameraPose(cameraposition, rotation[i], translation[i]);
-
-		//TODO remove test...............................................................................
-		double pi = 3.14159;
-		double deg2Rad = pi/180.0;
-		double angleX = 20/*+(i++)*/;
-		double sx = sin(angleX * deg2Rad);
-		double cx = cos(angleX * deg2Rad);
-		cv::Mat test_t = (cv::Mat_<double>(4, 4) << 1.0, 0.0, 0.0, 3, 0.0, 1.0, 0.0, 3, 0.0, 0.0, 1.0, 1, 0.0, 0.0, 0.0, 1.0);
-		cv::Mat test_r = (cv::Mat_<double>(4, 4) << 1, 0, 0, 0, 0, cx, -sx, 0, 0, sx, cx, 0, 0, 0, 0, 1);
-		setCameraPosition(cameraposition, test_t, test_r);
-
-		renderScene(video[i], cameraposition);
+		SDL_Delay(10);
 	}
 }
 
