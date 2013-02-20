@@ -208,11 +208,11 @@ void Renderer::handleInputEvents() {
 			break;
 			//change frame
 		case SDLK_PLUS:
-			frame++;
+			frame=frame+25;
 			break;
 		case SDLK_MINUS:
 			if (frame > 0)
-				frame--;
+				frame= frame-25;
 			break;
 			//object
 		case SDLK_w:
@@ -290,15 +290,14 @@ void Renderer::setupPerspective(){
 		//double cy = K.at<double>(1, 2);
 
 		double aspectRatio = (videoSize.width / videoSize.height) * (fy / fx);
-		double fovy = 2 * atan(videoSize.height / (2.0 * fy)); 	//radiant
-		double frustumHeight = tan(fovy / 2.0) * zNear;
+		//double fovy = 2 * atan(videoSize.height / (2.0 * fy)); 	//radiant
+		double frustumHeight = videoSize.height / (2.0 * fy) * zNear;
 		double frustumWidth = aspectRatio * frustumHeight;
 
 		//gluPerspective(45.0,videoSize.width/videoSize.height,0.1,1000.0);
 		//gluPerspective(fovy, aspectRatio, zNear, zFar);
 		glFrustum(-frustumWidth , frustumWidth , -frustumHeight, frustumHeight, zNear,	zFar);
 		//glFrustum(-zNear*cx/fx, zNear*(videoSize.width-cx)/fx, -zNear*cy/fy, zNear*(videoSize.height-cy)/fy, zNear, zFar);
-		//glFrustum( -videoSize.width/2, videoSize.width, -videoSize.height/2, videoSize.height/2, zNear, zFar );
 		isPerspectiveSet=true;
 
 	}
