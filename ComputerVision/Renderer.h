@@ -1,8 +1,8 @@
 #pragma once
 #include <string.h>
-#include <cv.h>
+#include "opencv/cv.h"
 #include <GL/glut.h>
-#include <highgui.h>
+#include "opencv/highgui.h"
 
 
 class Renderer {
@@ -10,8 +10,8 @@ public:
 	Renderer(std::string _outputVideoFilename, cv::Size videoResolution, double framerate, std::string* initObjectFilename, cv::Mat K/*kalibration*/);
 	Renderer(std::string _outputVideoFilename, cv::VideoCapture video, std::string* initObjectFilename, cv::Mat K/*kalibration*/);
 	virtual ~Renderer();
-	void render(std::vector<cv::Mat>& inputVideo, std::vector<cv::Mat> rotation, std::vector<cv::Mat> translation);
-	void setupObjectPostion(std::vector<cv::Mat>& inputVideo, std::vector<cv::Mat> rotation, std::vector<cv::Mat> translation);
+	void render(std::vector<cv::Mat>& inputVideo, std::vector<cv::Mat> cvCameraPositions);
+	void setupObjectPostion(std::vector<cv::Mat>& inputVideo, std::vector<cv::Mat> cvCameraPositions);
 	void showKeyInfo();
 private:
 	cv::VideoWriter videoWriter;
@@ -37,6 +37,6 @@ private:
 	void setupPerspective();
 	void renderAndWriteFrame(cv::Mat& background, double cameraposition[16]);
 	void renderScene(cv::Mat& background, double cameraposition[16]);
-	double* setCameraPosition(double modelViewMatrixRecoveredCamera[16], cv::Mat& rotation, cv::Mat& translation);
-	void handleInputEvents();
+	double* toGLMatrix(double modelViewMatrixRecoveredCamera[16], cv::Mat cvCameraPositions);
+	void handleInputEvents(int framecount);
 };
