@@ -40,7 +40,7 @@ int main(int argc, char* argv[]) {
 		frames.push_back(frame.clone());
 	}
 
-	cv::Mat K = (cv::Mat_<double>(3,4) <<  50, 0.0, 10.0, 0.0, 0.0, 50.0, 10.0, 0, 0.0, 0.0, -1.0 , 0);
+	cv::Mat K = (cv::Mat_<double>(4,3) <<  50, 0.0, 10.0, 0.0, 0.0, 50.0, 10.0, 0, 0.0, 0.0, -1.0 , 0);
 	Renderer renderer(video_filename + "_render2.avi", cap, data_filename, K);
 
 
@@ -54,9 +54,10 @@ int main(int argc, char* argv[]) {
 	//cv::Mat test_r = (cv::Mat_<double>(4, 4) << 1, 0, 0, 0, 0, cx, -sx, 0, 0, sx, cx, 0, 0, 0, 0, 1);
 	//test_r.at<double>(0, 0) = 0.5;
 	//test_r.at<double>(1, 0) = 0.2;
-	cv::Mat test_rt = (cv::Mat_<double>(4, 4) << 1, 0, 0, 0,/**/ 0, 1, 0, 0,/**/ 0, 0, 0, 1,/**/ 0, 0, 0, 1);
-	vector<Mat> cameraposes;
-	cameraposes.push_back(test_rt);
+	cv::Mat test_rt = (cv::Mat_<double>(3, 4) << 1.0, 0.0, 0.0, 0,/**/ 0.0, 1.0, 0.0, 0,/**/ 0.0, 0.0, 1.0, 0);
+	cv::Matx34d tr = Matx34d(test_rt);
+	vector<Matx34d> cameraposes;
+	cameraposes.push_back(tr);
 
 	renderer.setupObjectPostion(frames, cameraposes);
 	renderer.render(frames, cameraposes);
@@ -138,11 +139,11 @@ void Renderer::init(std::string filename2, std::string* initFilename, cv::Size s
 }
 
 void Renderer::readObjectAndLightData() {
-	objectPosition = Point3d(0, 0, -3);
+	objectPosition = Point3d(0, 0, -1);
 	objectRotation[0]=0;
 	objectRotation[1]=0;
 	objectRotation[2]=0;
-	scale = 0.5;
+	scale = 0.2;
 
 	lightPosition[0] = 0.0;
 	lightPosition[1] = 0.0;
@@ -234,22 +235,22 @@ void Renderer::handleInputEvents(int framecount) {
 			break;
 			//object
 		case SDLK_w:
-			objectPosition.y += 1;
+			objectPosition.y += 0.5;
 			break;
 		case SDLK_s:
-			objectPosition.y -= 1;
+			objectPosition.y -= 0.5;
 			break;
 		case SDLK_a:
-			objectPosition.x -= 1;
+			objectPosition.x -= 0.5;
 			break;
 		case SDLK_d:
-			objectPosition.x += 1;
+			objectPosition.x += 0.5;
 			break;
 		case SDLK_q:
-			objectPosition.z += 1;
+			objectPosition.z += 0.5;
 			break;
 		case SDLK_e:
-			objectPosition.z -= 1;
+			objectPosition.z -= 0.5;
 			break;
 		case SDLK_y:
 			objectRotation[0] -= 5;
@@ -320,7 +321,7 @@ void Renderer::setupPerspective(){
 	}
 }
 
-void Renderer::setupObjectPostion(std::vector<cv::Mat>& video, std::vector<cv::Mat> cvCameraPositions){
+void Renderer::setupObjectPostion(std::vector<cv::Mat>& video, std::vector<cv::Matx34d> cvCameraPositions){
 	cout << "Position object and light into the scene" << endl;
 
 	showKeyInfo();
@@ -344,10 +345,11 @@ void Renderer::setupObjectPostion(std::vector<cv::Mat>& video, std::vector<cv::M
 
 		handleInputEvents(video.size());	//handle SDL events
 		SDL_Delay(10);
+		cout << objectPosition.x << " " << objectPosition.y << " "<<objectPosition.z << endl;
 	}
 }
 
-void Renderer::render(std::vector<cv::Mat>& video, std::vector<cv::Mat> cvCameraPositions) {
+void Renderer::render(std::vector<cv::Mat>& video, std::vector<cv::Matx34d> cvCameraPositions) {
 	//open VideoWriter for output-video
 	cout << "Output-video" << endl;
 	openOutputFile();
@@ -405,6 +407,7 @@ void Renderer::renderScene(cv::Mat& background, double cameraposition[16]) {
 	glMatrixMode(GL_MODELVIEW);
 
 
+	glLoadIdentity();
 	glPushMatrix();
 		//set camerapostion
 		glLoadMatrixd(cameraposition);
@@ -471,28 +474,42 @@ void Renderer::renderScene(cv::Mat& background, double cameraposition[16]) {
 	SDL_GL_SwapBuffers();
 }
 
-double* Renderer::toGLMatrix(double modelViewCamera[16], cv::Mat cvCameraPosition) {
+double* Renderer::toGLMatrix(double modelViewCamera[16], cv::Matx34d cvCameraPosition) {
 	//y and z axis are in OpenCV reversed to OpenGL
 	//first column
-	modelViewCamera[0] = cvCameraPosition.at<double>(0, 0);
-	modelViewCamera[1] = cvCameraPosition.at<double>(1, 0);
-	modelViewCamera[2] = cvCameraPosition.at<double>(2, 0);
-	modelViewCamera[3] = cvCameraPosition.at<double>(3, 0);
+	modelViewCamera[0] = cvCameraPosition.val[0];
+	modelViewCamera[1] = cvCameraPosition.val[4];
+	modelViewCamera[2] = cvCameraPosition.val[8];
+	modelViewCamera[3] = 0;//cvCameraPosition.val[3];
 	//second column
-	modelViewCamera[4] = cvCameraPosition.at<double>(0, 1);
-	modelViewCamera[5] = cvCameraPosition.at<double>(1, 1);
-	modelViewCamera[6] = cvCameraPosition.at<double>(2, 1);
-	modelViewCamera[7] = cvCameraPosition.at<double>(3, 1);
+	modelViewCamera[4] = cvCameraPosition.val[1];
+	modelViewCamera[5] = cvCameraPosition.val[5];
+	modelViewCamera[6] = cvCameraPosition.val[9];
+	modelViewCamera[7] = 0;//cvCameraPosition.val[7];
 	//third column
-	modelViewCamera[8] = cvCameraPosition.at<double>(0, 2);
-	modelViewCamera[9] = cvCameraPosition.at<double>(1, 2);
-	modelViewCamera[10] = cvCameraPosition.at<double>(2, 2);
-	modelViewCamera[11] = cvCameraPosition.at<double>(3, 2);
+	modelViewCamera[8] = cvCameraPosition.val[2];
+	modelViewCamera[9] = cvCameraPosition.val[6];
+	modelViewCamera[10] = cvCameraPosition.val[10];
+	modelViewCamera[11] = 0;//cvCameraPosition.val[11];
 	//fourth column-translations
-	modelViewCamera[12] = cvCameraPosition.at<double>(0, 3);
-	modelViewCamera[13] = cvCameraPosition.at<double>(1, 3);
-	modelViewCamera[14] = cvCameraPosition.at<double>(2, 3);
-	modelViewCamera[15] = cvCameraPosition.at<double>(3, 3);
+	modelViewCamera[12] = cvCameraPosition.val[3];
+	modelViewCamera[13] = cvCameraPosition.val[7];
+	modelViewCamera[14] = cvCameraPosition.val[11];
+	modelViewCamera[15] = 1;
+
+
+	for(int i=0;i<12;i++){
+		//for(int j=0;j<cvCameraPosition.cols;j++)
+			cout << cvCameraPosition.val[i] <<" ";
+		//cout << endl;
+	}
+	cout << endl;
+	for (int i = 0; i < 4; i++) {
+		for(int j=0; j < 4;j++){
+			cout << modelViewCamera[(4*j)+i] <<" ";
+		}
+		cout << endl;
+	}
 
 	return modelViewCamera;
 }
